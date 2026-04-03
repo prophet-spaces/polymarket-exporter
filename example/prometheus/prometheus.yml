@@ -1,0 +1,36 @@
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+rule_files:
+  - /etc/prometheus/alert_rules.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  # Multi-target pattern: each slug is listed as a "target",
+  # then relabeled into the ?target= query parameter.
+  - job_name: polymarket
+    metrics_path: /probe
+    scrape_interval: 10s
+    scrape_timeout: 5s
+    static_configs:
+      - targets:
+          - will-jesus-christ-return-before-2027          # https://polymarket.com/event/will-jesus-christ-return-before-2027
+          - will-china-invade-taiwan-by-december-31-2027  # https://polymarket.com/event/will-china-invade-taiwan-by-december-31-2027
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: polymarket-exporter:9184
+
+  # Internal exporter health metrics
+  - job_name: polymarket-exporter
+    static_configs:
+      - targets: ["polymarket-exporter:9184"]
+    metrics_path: /metrics

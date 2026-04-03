@@ -1,0 +1,96 @@
+# Alert rules for polymarket gauge metrics.
+#
+# All polymarket_* metrics are GAUGES, not counters.
+# - rate() is for counters only — do NOT use it on gauges.
+# - delta()   → raw difference over a time window (catches sudden jumps)
+# - deriv()   → per-second derivative of a gauge (catches sustained drift)
+# - changes() → number of value transitions (catches volatility)
+
+groups:
+  - name: polymarket_price_alerts
+    rules:
+      # Fires when price moves more than 0.05 in either direction within 5 minutes
+      - alert: LargePriceMovement
+        expr: abs(delta(polymarket_last_trade_price[5m])) > 0.05
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Large price movement on {{ $labels.question }}"
+          description: >-
+            Outcome "{{ $labels.outcome }}" moved by
+            {{ $value | printf "%.4f" }} in the last 5 minutes.
+
+      # Fires when bid-ask spread exceeds 2 ticks for 5 minutes.
+      # Normalises by tick_size so the threshold works across markets
+      # (e.g. 0.01-cent and 0.1-cent tick sizes).
+      - alert: WideSpread
+        expr: (polymarket_spread / polymarket_tick_size) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Wide spread on {{ $labels.question }}"
+          description: >-
+            Outcome "{{ $labels.outcome }}" spread is
+            {{ $value | printf "%.0f" }} ticks (threshold: 10).
+
+      # Fires on large open interest swing (>$100k in 15 minutes).
+      - alert: LargeOpenInterestChange
+        expr: abs(delta(polymarket_open_interest[15m])) > 100000
+        for: 0m
+        labels:
+          severity: info
+        annotations:
+          summary: "Large OI change on {{ $labels.question }}"
+          description: >-
+            Open interest changed by {{ $value | printf "%.0f" }}
+            in the last 15 minutes.
+
+      # Fires when the price value changes more than 20 times in 5 minutes.
+      - alert: HighVolatility
+        expr: changes(polymarket_last_trade_price[5m]) > 20
+        for: 2m
+        labels:
+          severity: info
+        annotations:
+          summary: "High volatility on {{ $labels.question }}"
+          description: >-
+            Outcome "{{ $labels.outcome }}" price changed
+            {{ $value | printf "%.0f" }} times in the last 5 minutes.
+
+      # Fires when price drifts steadily for 5+ minutes.
+      - alert: SustainedPriceDrift
+        expr: abs(deriv(polymarket_last_trade_price[10m])) > 0.001
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Sustained price drift on {{ $labels.question }}"
+          description: >-
+            Outcome "{{ $labels.outcome }}" drifting at
+            {{ $value | printf "%.6f" }} per second over 10 minutes.
+
+
+### Exporter alerts
+  - name: polymarket_exporter_health
+    rules:
+      - alert: ExporterDown
+        expr: up{job="polymarket"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Polymarket probe failing for {{ $labels.instance }}"
+          description: >-
+            Scrape target {{ $labels.instance }} has been down for 2 minutes.
+
+      - alert: WebSocketDisconnected
+        expr: polymarket_exporter_websocket_connected == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "WebSocket disconnected"
+          description: >-
+            The exporter WebSocket has been disconnected for 5 minutes.

@@ -1,0 +1,8 @@
+# Rust
+target/
+
+# AI
+.claude/
+
+# secrets
+.env
