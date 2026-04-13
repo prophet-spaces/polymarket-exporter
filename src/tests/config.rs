@@ -38,6 +38,10 @@ fn default_rate_limits_clob() {
 
     let spread = cfg.clob.get("spread").expect("clob.spread missing");
     assert_eq!(spread.max_requests, 1500);
+
+    let markets = cfg.clob.get("markets").expect("clob.markets missing");
+    assert_eq!(markets.max_requests, 500);
+    assert_eq!(markets.window_secs, 10);
 }
 
 #[test]

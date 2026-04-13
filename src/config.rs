@@ -76,6 +76,7 @@ impl Default for RateLimitsConfig {
             ("fee_rate".into(), RateLimitEntry { max_requests: 200, window_secs: 10 }),
             ("tick_size".into(), RateLimitEntry { max_requests: 200, window_secs: 10 }),
             ("spread".into(), RateLimitEntry { max_requests: 1500, window_secs: 10 }),
+            ("markets".into(), RateLimitEntry { max_requests: 500, window_secs: 10 }),
         ]);
         let data_api = HashMap::from([
             ("general".into(), RateLimitEntry { max_requests: 1000, window_secs: 10 }),

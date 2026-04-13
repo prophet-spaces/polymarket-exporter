@@ -11,7 +11,7 @@ use tracing::{error, info};
 
 use crate::api::clob::ClobClient;
 use crate::api::data::DataClient;
-use crate::api::gamma::GammaClient;
+use crate::api::gamma::{GammaClient, TokenInfo};
 use crate::state::{SlugRegistry, TokenState};
 use crate::ws::market::WsCommand;
 
@@ -67,10 +67,40 @@ async fn ensure_active(slug: &str, state: &ProbeState) -> anyhow::Result<()> {
 
     let resolved = state.gamma.resolve_slug(slug).await?;
 
+    // Fetch authoritative token-outcome mappings from CLOB API.
+    // Falls back to Gamma's mapping if CLOB fetch fails.
+    let mut clob_tokens: HashMap<String, Vec<TokenInfo>> = HashMap::new();
+    for market in &resolved.markets {
+        match state.clob.get_market(&market.condition_id).await {
+            Ok(cm) => {
+                let tokens: Vec<TokenInfo> = cm
+                    .tokens
+                    .iter()
+                    .map(|t| TokenInfo {
+                        token_id: t.token_id.clone(),
+                        outcome: t.outcome.clone(),
+                    })
+                    .collect();
+                clob_tokens.insert(market.condition_id.clone(), tokens);
+            }
+            Err(e) => {
+                error!(
+                    "failed to fetch CLOB market for {}, falling back to Gamma: {:#}",
+                    market.condition_id, e
+                );
+            }
+        }
+    }
+
     let mut initial_states: HashMap<String, TokenState> = HashMap::new();
 
     for market in &resolved.markets {
-        for ti in market.token_infos() {
+        let token_infos = clob_tokens
+            .get(&market.condition_id)
+            .cloned()
+            .unwrap_or_else(|| market.token_infos());
+
+        for ti in &token_infos {
             let mut ts = TokenState::default();
 
             match state.clob.get_book(&ti.token_id).await {
@@ -119,7 +149,10 @@ async fn ensure_active(slug: &str, state: &ProbeState) -> anyhow::Result<()> {
         }
     }
 
-    let token_ids = state.registry.activate(slug, &resolved, initial_states).await;
+    let token_ids = state
+        .registry
+        .activate(slug, &resolved, &clob_tokens, initial_states)
+        .await;
 
     if !token_ids.is_empty() {
         let _ = state.ws_cmd_tx.send(WsCommand::Subscribe(token_ids)).await;

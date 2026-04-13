@@ -132,7 +132,7 @@ async fn registry_activate_and_is_active() {
         }],
     };
 
-    let token_ids = reg.activate("test-slug", &resolved, HashMap::new()).await;
+    let token_ids = reg.activate("test-slug", &resolved, &HashMap::new(), HashMap::new()).await;
 
     assert!(reg.is_active("test-slug").await);
     assert_eq!(token_ids.len(), 2);
@@ -159,7 +159,7 @@ async fn registry_token_to_slug_mapping() {
         }],
     };
 
-    reg.activate("my-slug", &resolved, HashMap::new()).await;
+    reg.activate("my-slug", &resolved, &HashMap::new(), HashMap::new()).await;
 
     let t2s = reg.token_to_slug.read().await;
     assert_eq!(t2s.get("tok_x"), Some(&"my-slug".to_string()));
@@ -186,7 +186,7 @@ async fn registry_condition_ids_for_slug() {
         ],
     };
 
-    reg.activate("multi", &resolved, HashMap::new()).await;
+    reg.activate("multi", &resolved, &HashMap::new(), HashMap::new()).await;
     let cids = reg.condition_ids_for_slug("multi").await;
     assert_eq!(cids.len(), 2);
     assert!(cids.contains(&"0xaaa".to_string()));
@@ -197,4 +197,74 @@ async fn registry_condition_ids_for_slug() {
 async fn registry_condition_ids_unknown_slug() {
     let reg = SlugRegistry::new(CacheConfig::default());
     assert!(reg.condition_ids_for_slug("nope").await.is_empty());
+}
+
+#[tokio::test]
+async fn registry_activate_prefers_clob_tokens() {
+    let reg = SlugRegistry::new(CacheConfig::default());
+    let resolved = ResolvedSlug {
+        title: "Test".to_string(),
+        markets: vec![GammaMarket {
+            id: "m1".to_string(),
+            question: Some("Will X?".to_string()),
+            condition_id: "0xcond".to_string(),
+            slug: Some("test-slug".to_string()),
+            // Gamma has outcomes in wrong order
+            outcomes: Some(r#"["No","Yes"]"#.to_string()),
+            clob_token_ids: Some(r#"["tok_a","tok_b"]"#.to_string()),
+            active: Some(true),
+            closed: Some(false),
+            order_price_min_tick_size: None,
+            order_min_size: None,
+        }],
+    };
+
+    // CLOB provides the correct mapping
+    let clob_tokens = HashMap::from([(
+        "0xcond".to_string(),
+        vec![
+            TokenInfo { token_id: "tok_a".to_string(), outcome: "Yes".to_string() },
+            TokenInfo { token_id: "tok_b".to_string(), outcome: "No".to_string() },
+        ],
+    )]);
+
+    reg.activate("test-slug", &resolved, &clob_tokens, HashMap::new()).await;
+
+    let slugs = reg.slugs.read().await;
+    let ss = slugs.get("test-slug").unwrap();
+    let tokens = &ss.markets[0].tokens;
+    // Should use CLOB mapping (Yes, No) not Gamma mapping (No, Yes)
+    assert_eq!(tokens[0].outcome, "Yes");
+    assert_eq!(tokens[0].token_id, "tok_a");
+    assert_eq!(tokens[1].outcome, "No");
+    assert_eq!(tokens[1].token_id, "tok_b");
+}
+
+#[tokio::test]
+async fn registry_activate_falls_back_to_gamma_tokens() {
+    let reg = SlugRegistry::new(CacheConfig::default());
+    let resolved = ResolvedSlug {
+        title: "Test".to_string(),
+        markets: vec![GammaMarket {
+            id: "m1".to_string(),
+            question: Some("Will X?".to_string()),
+            condition_id: "0xcond".to_string(),
+            slug: Some("test-slug".to_string()),
+            outcomes: Some(r#"["Yes","No"]"#.to_string()),
+            clob_token_ids: Some(r#"["tok_a","tok_b"]"#.to_string()),
+            active: Some(true),
+            closed: Some(false),
+            order_price_min_tick_size: None,
+            order_min_size: None,
+        }],
+    };
+
+    // Empty CLOB tokens — should fall back to Gamma
+    reg.activate("test-slug", &resolved, &HashMap::new(), HashMap::new()).await;
+
+    let slugs = reg.slugs.read().await;
+    let ss = slugs.get("test-slug").unwrap();
+    let tokens = &ss.markets[0].tokens;
+    assert_eq!(tokens[0].outcome, "Yes");
+    assert_eq!(tokens[1].outcome, "No");
 }

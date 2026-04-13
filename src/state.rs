@@ -148,11 +148,13 @@ impl SlugRegistry {
     }
 
     /// Register a newly resolved slug. Returns the list of all token IDs to subscribe.
-    /// `slug` is the user-provided slug (used as registry key).
+    /// `clob_tokens` maps condition_id -> Vec<TokenInfo> from the CLOB `/markets` endpoint,
+    /// which provides authoritative token-outcome mappings. Falls back to Gamma if unavailable.
     pub async fn activate(
         &self,
         slug: &str,
         resolved: &ResolvedSlug,
+        clob_tokens: &HashMap<String, Vec<TokenInfo>>,
         initial_token_states: HashMap<String, TokenState>,
     ) -> Vec<String> {
         let markets: Vec<MarketMeta> = resolved
@@ -161,7 +163,10 @@ impl SlugRegistry {
             .map(|m| MarketMeta {
                 question: m.question.as_deref().unwrap_or("").to_string(),
                 condition_id: m.condition_id.clone(),
-                tokens: m.token_infos(),
+                tokens: clob_tokens
+                    .get(&m.condition_id)
+                    .cloned()
+                    .unwrap_or_else(|| m.token_infos()),
             })
             .collect();
 

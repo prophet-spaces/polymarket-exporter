@@ -9,9 +9,9 @@
 groups:
   - name: polymarket_price_alerts
     rules:
-      # Fires when price moves more than 0.05 in either direction within 5 minutes
+      # Fires when price moves more than 5 cent in either direction within 5 minutes
       - alert: LargePriceMovement
-        expr: abs(delta(polymarket_last_trade_price[5m])) > 0.05
+        expr: abs(delta(polymarket_last_trade_price[5m])) > 5
         for: 0m
         labels:
           severity: warning
@@ -25,7 +25,7 @@ groups:
       # Normalises by tick_size so the threshold works across markets
       # (e.g. 0.01-cent and 0.1-cent tick sizes).
       - alert: WideSpread
-        expr: (polymarket_spread / polymarket_tick_size) > 2
+        expr: (polymarket_spread / polymarket_tick_size) > 10
         for: 5m
         labels:
           severity: warning
@@ -61,7 +61,7 @@ groups:
 
       # Fires when price drifts steadily for 5+ minutes.
       - alert: SustainedPriceDrift
-        expr: abs(deriv(polymarket_last_trade_price[10m])) > 0.001
+        expr: abs(deriv(polymarket_last_trade_price[10m])) > 3
         for: 5m
         labels:
           severity: warning

@@ -5,7 +5,7 @@ use crate::config::RateLimitsConfig;
 fn from_default_config_creates_all_limiters() {
     let cfg = RateLimitsConfig::default();
     let svc = RateLimiterService::from_config(&cfg);
-    assert_eq!(svc.limiter_count(), 7);
+    assert_eq!(svc.limiter_count(), 8);
 }
 
 #[test]
@@ -19,6 +19,7 @@ fn from_default_config_has_expected_keys() {
     assert!(svc.has_limiter("clob.spread"));
     assert!(svc.has_limiter("data_api.general"));
     assert!(svc.has_limiter("data_api.holders"));
+    assert!(svc.has_limiter("clob.markets"));
 }
 
 #[test]

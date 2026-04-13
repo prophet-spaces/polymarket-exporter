@@ -28,6 +28,17 @@ pub struct OrderLevel {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct ClobMarket {
+    pub tokens: Vec<ClobToken>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ClobToken {
+    pub token_id: String,
+    pub outcome: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct FeeRateResponse {
     pub base_fee: i64,
 }
@@ -83,4 +94,28 @@ impl ClobClient {
 
         resp.json().await.context("failed to deserialize fee rate")
     }
+
+    pub async fn get_market(&self, condition_id: &str) -> Result<ClobMarket> {
+        self.rate_limiter.acquire("clob", "markets").await;
+
+        let url = format!("{}/markets/{}", CLOB_BASE, condition_id);
+        let resp = self
+            .http
+            .get(&url)
+            .send()
+            .await
+            .context("failed to request CLOB market")?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!("CLOB /markets returned {}: {}", status, body);
+        }
+
+        resp.json().await.context("failed to deserialize CLOB market")
+    }
 }
+
+#[cfg(test)]
+#[path = "../tests/clob.rs"]
+mod tests;
