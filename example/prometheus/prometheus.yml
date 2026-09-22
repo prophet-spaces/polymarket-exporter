@@ -15,8 +15,8 @@ scrape_configs:
   # then relabeled into the ?target= query parameter.
   - job_name: polymarket
     metrics_path: /probe
-    scrape_interval: 10s
-    scrape_timeout: 5s
+    scrape_interval: 5m
+    scrape_timeout: 60s
     static_configs:
       - targets:
           - will-jesus-christ-return-before-2027          # https://polymarket.com/event/will-jesus-christ-return-before-2027
