@@ -13,7 +13,10 @@ fn holder(name: Option<&str>, pseudonym: Option<&str>, wallet: Option<&str>) -> 
 
 #[test]
 fn display_name_prefers_name() {
-    assert_eq!(holder(Some("Alice"), Some("Bob"), Some("0x1")).display_name(), "Alice");
+    assert_eq!(
+        holder(Some("Alice"), Some("Bob"), Some("0x1")).display_name(),
+        "Alice"
+    );
 }
 
 #[test]
@@ -23,7 +26,10 @@ fn display_name_falls_back_to_pseudonym() {
 
 #[test]
 fn display_name_empty_name_falls_back_to_pseudonym() {
-    assert_eq!(holder(Some(""), Some("Bob"), Some("0x1")).display_name(), "Bob");
+    assert_eq!(
+        holder(Some(""), Some("Bob"), Some("0x1")).display_name(),
+        "Bob"
+    );
 }
 
 #[test]
@@ -93,4 +99,58 @@ fn serde_meta_holder() {
     let holders = mh.holders.unwrap();
     assert_eq!(holders.len(), 1);
     assert_eq!(holders[0].name, Some("Alice".to_string()));
+}
+
+#[test]
+fn serde_position() {
+    let json = r#"{
+        "asset": "token-1",
+        "conditionId": "0xcondition",
+        "size": 10.0,
+        "avgPrice": 0.5,
+        "initialValue": 5.0,
+        "currentValue": 6.5,
+        "cashPnl": 1.5,
+        "percentPnl": 25.0,
+        "realizedPnl": 0.25,
+        "curPrice": 0.65,
+        "redeemable": false,
+        "title": "Will it happen?",
+        "outcome": "Yes"
+    }"#;
+    let position: Position = serde_json::from_str(json).unwrap();
+    assert_eq!(position.asset, "token-1");
+    assert_eq!(position.avg_price, 0.5);
+    assert_eq!(position.initial_value, 5.0);
+    assert_eq!(position.current_value, 6.5);
+    assert_eq!(position.cash_pnl, 1.5);
+    assert_eq!(position.percent_pnl, 25.0);
+    assert!(!position.redeemable);
+}
+
+#[test]
+fn serde_user_stats_all_time_realized_pnl() {
+    let json = r#"{
+        "data": {
+            "all_time_pnl": {
+                "realized_pnl": 1468.34
+            }
+        }
+    }"#;
+    let stats: UserStatsResponse = serde_json::from_str(json).unwrap();
+
+    assert_eq!(
+        stats
+            .data
+            .and_then(|stats| stats.all_time_pnl)
+            .and_then(|pnl| pnl.realized_pnl),
+        Some(1468.34)
+    );
+}
+
+#[test]
+fn serde_user_stats_all_time_pnl_can_be_unavailable() {
+    let stats: UserStatsResponse = serde_json::from_str(r#"{"data": null}"#).unwrap();
+
+    assert!(stats.data.is_none());
 }

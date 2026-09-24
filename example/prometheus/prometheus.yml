@@ -11,9 +11,8 @@ alerting:
         - targets: ["alertmanager:9093"]
 
 scrape_configs:
-  # Multi-target pattern: each slug is listed as a "target",
-  # then relabeled into the ?target= query parameter.
-  - job_name: polymarket
+  ### monitor market
+  - job_name: polymarket-market
     metrics_path: /probe
     scrape_interval: 5m
     scrape_timeout: 60s
@@ -24,6 +23,24 @@ scrape_configs:
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: polymarket-exporter:9184
+
+  ### monitor wallet address
+  - job_name: polymarket-wallet
+    metrics_path: /probe
+    scrape_interval: 5m
+    scrape_timeout: 60s
+    static_configs:
+      - targets:
+          - "0x2dD2C8233E02F5636b490323a8CdF3CDc4eEd5d8" # change to your address
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - target_label: __param_module
+        replacement: wallet
       - source_labels: [__param_target]
         target_label: instance
       - target_label: __address__

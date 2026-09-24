@@ -10,7 +10,7 @@ use tokio::sync::mpsc;
 use tracing::{error, info};
 
 use crate::api::clob::ClobClient;
-use crate::api::data::DataClient;
+use crate::api::data::{DataClient, Position};
 use crate::api::gamma::{GammaClient, TokenInfo};
 use crate::state::{SlugRegistry, TokenState};
 use crate::ws::market::WsCommand;
@@ -18,6 +18,7 @@ use crate::ws::market::WsCommand;
 #[derive(Debug, serde::Deserialize)]
 pub struct ProbeParams {
     pub target: Option<String>,
+    pub module: Option<String>,
 }
 
 pub struct ProbeState {
@@ -32,7 +33,7 @@ pub async fn handle_probe(
     Query(params): Query<ProbeParams>,
     state: axum::extract::State<Arc<ProbeState>>,
 ) -> impl IntoResponse {
-    let slug = match params.target {
+    let target = match params.target {
         Some(s) if !s.is_empty() => s,
         _ => {
             return (
@@ -42,6 +43,17 @@ pub async fn handle_probe(
         }
     };
 
+    match params.module.as_deref().unwrap_or("market") {
+        "market" => handle_market_probe(&target, &state).await,
+        "wallet" => handle_wallet_probe(&target, &state).await,
+        module => (
+            StatusCode::BAD_REQUEST,
+            format!("unknown module '{}'; expected 'market' or 'wallet'", module),
+        ),
+    }
+}
+
+async fn handle_market_probe(slug: &str, state: &ProbeState) -> (StatusCode, String) {
     if let Err(e) = ensure_active(&slug, &state).await {
         error!("failed to activate slug '{}': {:#}", slug, e);
         return (
@@ -54,8 +66,44 @@ pub async fn handle_probe(
         error!("failed to refresh REST data for '{}': {:#}", slug, e);
     }
 
-    let body = render_metrics(&slug, &state.registry).await;
+    let body = render_market_metrics(&slug, &state.registry).await;
     (StatusCode::OK, body)
+}
+
+async fn handle_wallet_probe(wallet: &str, state: &ProbeState) -> (StatusCode, String) {
+    if !is_wallet_address(wallet) {
+        return (
+            StatusCode::BAD_REQUEST,
+            "wallet target must be a 0x-prefixed, 40-hex-character address".to_string(),
+        );
+    }
+
+    let result = async {
+        let positions = state.data.get_positions(wallet).await?;
+        let all_time_realized_pnl = state.data.get_all_time_realized_pnl(wallet).await?;
+        Ok::<_, anyhow::Error>((positions, all_time_realized_pnl))
+    }
+    .await;
+
+    match result {
+        Ok((positions, all_time_realized_pnl)) => (
+            StatusCode::OK,
+            render_wallet_metrics(wallet, &positions, all_time_realized_pnl),
+        ),
+        Err(e) => {
+            error!("failed to fetch wallet data for '{}': {:#}", wallet, e);
+            (
+                StatusCode::BAD_GATEWAY,
+                format!("failed to fetch wallet data for '{}': {}", wallet, e),
+            )
+        }
+    }
+}
+
+fn is_wallet_address(wallet: &str) -> bool {
+    wallet.len() == 42
+        && wallet.starts_with("0x")
+        && wallet.as_bytes()[2..].iter().all(u8::is_ascii_hexdigit)
 }
 
 async fn ensure_active(slug: &str, state: &ProbeState) -> anyhow::Result<()> {
@@ -105,10 +153,7 @@ async fn ensure_active(slug: &str, state: &ProbeState) -> anyhow::Result<()> {
 
             match state.clob.get_book(&ti.token_id).await {
                 Ok(book) => {
-                    ts.min_order_size = book
-                        .min_order_size
-                        .as_deref()
-                        .and_then(|s| s.parse().ok());
+                    ts.min_order_size = book.min_order_size.as_deref().and_then(|s| s.parse().ok());
                     ts.tick_size = book.tick_size.as_deref().and_then(|s| s.parse().ok());
                     ts.last_trade_price = book
                         .last_trade_price
@@ -206,7 +251,7 @@ async fn refresh_rest_data(slug: &str, state: &ProbeState) -> anyhow::Result<()>
     Ok(())
 }
 
-async fn render_metrics(slug: &str, registry: &SlugRegistry) -> String {
+async fn render_market_metrics(slug: &str, registry: &SlugRegistry) -> String {
     let slugs = registry.slugs.read().await;
     let ss = match slugs.get(slug) {
         Some(s) => s,
@@ -215,42 +260,57 @@ async fn render_metrics(slug: &str, registry: &SlugRegistry) -> String {
 
     let mut out = String::with_capacity(4096);
 
-    write_help_type(&mut out, "polymarket_spread_bid", "Bid price closest to the spread", "gauge");
-    write_help_type(&mut out, "polymarket_spread_ask", "Ask price closest to the spread", "gauge");
-    write_help_type(&mut out, "polymarket_spread", "Bid-ask spread", "gauge");
     write_help_type(
         &mut out,
-        "polymarket_last_trade_price",
+        "polymarket_market_spread_bid",
+        "Bid price closest to the spread",
+        "gauge",
+    );
+    write_help_type(
+        &mut out,
+        "polymarket_market_spread_ask",
+        "Ask price closest to the spread",
+        "gauge",
+    );
+    write_help_type(
+        &mut out,
+        "polymarket_market_spread",
+        "Bid-ask spread",
+        "gauge",
+    );
+    write_help_type(
+        &mut out,
+        "polymarket_market_last_trade_price",
         "Last trade price",
         "gauge",
     );
     write_help_type(
         &mut out,
-        "polymarket_tick_size",
+        "polymarket_market_tick_size",
         "Minimum tick size",
         "gauge",
     );
     write_help_type(
         &mut out,
-        "polymarket_min_order_size",
+        "polymarket_market_min_order_size",
         "Minimum order size",
         "gauge",
     );
     write_help_type(
         &mut out,
-        "polymarket_fee_rate_bps",
+        "polymarket_market_fee_rate_bps",
         "Fee rate in basis points",
         "gauge",
     );
     write_help_type(
         &mut out,
-        "polymarket_open_interest",
+        "polymarket_market_open_interest",
         "Open interest value",
         "gauge",
     );
     write_help_type(
         &mut out,
-        "polymarket_top_holder_amount",
+        "polymarket_market_top_holder_amount",
         "Top holder position amount",
         "gauge",
     );
@@ -276,25 +336,29 @@ async fn render_metrics(slug: &str, registry: &SlugRegistry) -> String {
             );
 
             if let Some(v) = ts.best_bid {
-                let _ = writeln!(out, "polymarket_spread_bid{{{}}} {}", labels, v);
+                let _ = writeln!(out, "polymarket_market_spread_bid{{{}}} {}", labels, v);
             }
             if let Some(v) = ts.best_ask {
-                let _ = writeln!(out, "polymarket_spread_ask{{{}}} {}", labels, v);
+                let _ = writeln!(out, "polymarket_market_spread_ask{{{}}} {}", labels, v);
             }
             if let Some(v) = ts.spread {
-                let _ = writeln!(out, "polymarket_spread{{{}}} {}", labels, v);
+                let _ = writeln!(out, "polymarket_market_spread{{{}}} {}", labels, v);
             }
             if let Some(v) = ts.last_trade_price {
-                let _ = writeln!(out, "polymarket_last_trade_price{{{}}} {}", labels, v);
+                let _ = writeln!(
+                    out,
+                    "polymarket_market_last_trade_price{{{}}} {}",
+                    labels, v
+                );
             }
             if let Some(v) = ts.tick_size {
-                let _ = writeln!(out, "polymarket_tick_size{{{}}} {}", labels, v);
+                let _ = writeln!(out, "polymarket_market_tick_size{{{}}} {}", labels, v);
             }
             if let Some(v) = ts.min_order_size {
-                let _ = writeln!(out, "polymarket_min_order_size{{{}}} {}", labels, v);
+                let _ = writeln!(out, "polymarket_market_min_order_size{{{}}} {}", labels, v);
             }
             if let Some(v) = ts.fee_rate_bps {
-                let _ = writeln!(out, "polymarket_fee_rate_bps{{{}}} {}", labels, v);
+                let _ = writeln!(out, "polymarket_market_fee_rate_bps{{{}}} {}", labels, v);
             }
 
             // Top holders for this token
@@ -311,7 +375,7 @@ async fn render_metrics(slug: &str, registry: &SlugRegistry) -> String {
                     );
                     let _ = writeln!(
                         out,
-                        "polymarket_top_holder_amount{{{}}} {}",
+                        "polymarket_market_top_holder_amount{{{}}} {}",
                         holder_labels, amount
                     );
                 }
@@ -325,8 +389,159 @@ async fn render_metrics(slug: &str, registry: &SlugRegistry) -> String {
                 escape_label(q),
                 escape_label(cid),
             );
-            let _ = writeln!(out, "polymarket_open_interest{{{}}} {}", oi_labels, oi);
+            let _ = writeln!(
+                out,
+                "polymarket_market_open_interest{{{}}} {}",
+                oi_labels, oi
+            );
         }
+    }
+
+    out
+}
+
+fn render_wallet_metrics(
+    wallet: &str,
+    positions: &[Position],
+    all_time_realized_pnl: Option<f64>,
+) -> String {
+    let mut out = String::with_capacity(4096);
+
+    let metrics = [
+        ("polymarket_wallet_position_shares", "Open position shares"),
+        (
+            "polymarket_wallet_position_average_price",
+            "Average price paid per position share in USDC",
+        ),
+        (
+            "polymarket_wallet_position_current_price",
+            "Current price per position share in USDC",
+        ),
+        (
+            "polymarket_wallet_position_traded_usdc",
+            "USDC paid for the current open position",
+        ),
+        (
+            "polymarket_wallet_position_payout_if_win_usdc",
+            "USDC paid if all current position shares settle at 1",
+        ),
+        (
+            "polymarket_wallet_position_current_value_usdc",
+            "Current position value in USDC",
+        ),
+        (
+            "polymarket_wallet_position_unrealized_gain_usdc",
+            "Unrealized gain or loss from current value minus traded amount",
+        ),
+        (
+            "polymarket_wallet_position_unrealized_gain_ratio",
+            "Unrealized gain or loss as a ratio of traded amount",
+        ),
+        (
+            "polymarket_wallet_position_cash_pnl_usdc",
+            "Position cash profit or loss in USDC, as reported by Polymarket",
+        ),
+        (
+            "polymarket_wallet_position_pnl_ratio",
+            "Position profit or loss as a ratio of initial value",
+        ),
+        (
+            "polymarket_wallet_position_realized_pnl_usdc",
+            "Realized position profit or loss in USDC",
+        ),
+        (
+            "polymarket_wallet_all_time_realized_pnl_usdc",
+            "All-time realized profit or loss in USDC, including closed position history",
+        ),
+    ];
+    for (name, help) in metrics {
+        write_help_type(&mut out, name, help, "gauge");
+    }
+
+    for position in positions {
+        if position.redeemable {
+            continue;
+        }
+
+        let labels = format!(
+            "wallet=\"{}\",condition_id=\"{}\",token_id=\"{}\",question=\"{}\",outcome=\"{}\"",
+            escape_label(wallet),
+            escape_label(&position.condition_id),
+            escape_label(&position.asset),
+            escape_label(&position.title),
+            escape_label(&position.outcome),
+        );
+        let unrealized_gain = position.current_value - position.initial_value;
+        let unrealized_gain_ratio = if position.initial_value == 0.0 {
+            f64::NAN
+        } else {
+            unrealized_gain / position.initial_value
+        };
+        let _ = writeln!(
+            out,
+            "polymarket_wallet_position_shares{{{}}} {}",
+            labels, position.size
+        );
+        let _ = writeln!(
+            out,
+            "polymarket_wallet_position_average_price{{{}}} {}",
+            labels, position.avg_price
+        );
+        let _ = writeln!(
+            out,
+            "polymarket_wallet_position_current_price{{{}}} {}",
+            labels, position.cur_price
+        );
+        let _ = writeln!(
+            out,
+            "polymarket_wallet_position_traded_usdc{{{}}} {}",
+            labels, position.initial_value
+        );
+        let _ = writeln!(
+            out,
+            "polymarket_wallet_position_payout_if_win_usdc{{{}}} {}",
+            labels, position.size
+        );
+        let _ = writeln!(
+            out,
+            "polymarket_wallet_position_current_value_usdc{{{}}} {}",
+            labels, position.current_value
+        );
+        let _ = writeln!(
+            out,
+            "polymarket_wallet_position_unrealized_gain_usdc{{{}}} {}",
+            labels, unrealized_gain
+        );
+        let _ = writeln!(
+            out,
+            "polymarket_wallet_position_unrealized_gain_ratio{{{}}} {}",
+            labels, unrealized_gain_ratio
+        );
+        let _ = writeln!(
+            out,
+            "polymarket_wallet_position_cash_pnl_usdc{{{}}} {}",
+            labels, position.cash_pnl
+        );
+        let _ = writeln!(
+            out,
+            "polymarket_wallet_position_pnl_ratio{{{}}} {}",
+            labels,
+            position.percent_pnl / 100.0
+        );
+        let _ = writeln!(
+            out,
+            "polymarket_wallet_position_realized_pnl_usdc{{{}}} {}",
+            labels, position.realized_pnl
+        );
+    }
+
+    if let Some(realized_pnl) = all_time_realized_pnl {
+        let _ = writeln!(
+            out,
+            "polymarket_wallet_all_time_realized_pnl_usdc{{wallet=\"{}\"}} {}",
+            escape_label(wallet),
+            realized_pnl
+        );
     }
 
     out

@@ -1,0 +1,101 @@
+rule_files:
+  - ../alert_rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: active stable position does not alert on a downside price movement
+    interval: 1m
+    input_series:
+      - series: 'polymarket_wallet_position_current_price{wallet="0xwallet",condition_id="active",token_id="yes",question="Active market",outcome="Yes"}'
+        values: '0.50 0.50 0.50 0.50 0.50 0.50'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: WalletLargePositionPriceDownside
+        exp_alerts: []
+
+  - name: price increase does not alert on a downside price movement
+    interval: 1m
+    input_series:
+      - series: 'polymarket_wallet_position_current_price{wallet="0xwallet",condition_id="rising",token_id="yes",question="Rising market",outcome="Yes"}'
+        values: '0.50 0.52 0.54 0.56 0.58 0.60'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: WalletLargePositionPriceDownside
+        exp_alerts: []
+
+  - name: price drop alerts on a downside price movement
+    interval: 1m
+    input_series:
+      - series: 'polymarket_wallet_position_current_price{wallet="0xwallet",condition_id="falling",token_id="yes",question="Falling market",outcome="Yes"}'
+        values: '0.60 0.58 0.56 0.54 0.52 0.50'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: WalletLargePositionPriceDownside
+        exp_alerts:
+          - exp_labels:
+              wallet: 0xwallet
+              condition_id: falling
+              token_id: "yes"
+              question: Falling market
+              outcome: "Yes"
+              severity: warning
+            exp_annotations:
+              summary: Large position price drop for 0xwallet
+              description: Falling market (Yes) fell by 0.1100 in the last 15 minutes.
+
+  - name: proposed outcome with zero value still alerts on lost money
+    interval: 1m
+    input_series:
+      - series: 'polymarket_wallet_position_current_value_usdc{wallet="0xwallet",condition_id="proposed",token_id="no",question="Proposed outcome",outcome="No"}'
+        values: '0'
+      - series: 'polymarket_wallet_position_traded_usdc{wallet="0xwallet",condition_id="proposed",token_id="no",question="Proposed outcome",outcome="No"}'
+        values: '200'
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: WalletPositionLostAllValue
+        exp_alerts:
+          - exp_labels:
+              wallet: 0xwallet
+              condition_id: proposed
+              token_id: "no"
+              question: Proposed outcome
+              outcome: "No"
+              severity: warning
+            exp_annotations:
+              summary: Position lost all value for 0xwallet
+              description: Proposed outcome (No) has no current value despite a positive initial trade.
+
+  - name: disputed outcome with zero value still alerts on lost money
+    interval: 1m
+    input_series:
+      - series: 'polymarket_wallet_position_current_value_usdc{wallet="0xwallet",condition_id="disputed",token_id="no",question="Disputed outcome",outcome="No"}'
+        values: '0'
+      - series: 'polymarket_wallet_position_traded_usdc{wallet="0xwallet",condition_id="disputed",token_id="no",question="Disputed outcome",outcome="No"}'
+        values: '200'
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: WalletPositionLostAllValue
+        exp_alerts:
+          - exp_labels:
+              wallet: 0xwallet
+              condition_id: disputed
+              token_id: "no"
+              question: Disputed outcome
+              outcome: "No"
+              severity: warning
+            exp_annotations:
+              summary: Position lost all value for 0xwallet
+              description: Disputed outcome (No) has no current value despite a positive initial trade.
+
+  - name: settled redeemable position emits no metrics and clears the lost money alert
+    interval: 1m
+    input_series:
+      - series: 'polymarket_wallet_position_current_value_usdc{wallet="0xwallet",condition_id="settled",token_id="no",question="Settled outcome",outcome="No"}'
+        values: '0 stale'
+      - series: 'polymarket_wallet_position_traded_usdc{wallet="0xwallet",condition_id="settled",token_id="no",question="Settled outcome",outcome="No"}'
+        values: '200 stale'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: WalletPositionLostAllValue
+        exp_alerts: []

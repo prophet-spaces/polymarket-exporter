@@ -15,19 +15,19 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
-  "uid": "polymarket-overview",
-  "title": "Polymarket Overview",
-  "tags": ["polymarket"],
+  "uid": "polymarket-market-overview",
+  "title": "Polymarket Market Overview",
+  "tags": ["polymarket", "market"],
   "timezone": "browser",
   "refresh": "30s",
   "time": { "from": "now-6h", "to": "now" },
   "schemaVersion": 39,
   "templating": {
     "list": [
-      {
-        "current": {},
+            {
+                "current": {},
         "datasource": { "type": "prometheus", "uid": "" },
-        "definition": "label_values(polymarket_last_trade_price, instance)",
+        "definition": "label_values(polymarket_market_last_trade_price, instance)",
         "hide": 0,
         "includeAll": false,
         "label": "Instance",
@@ -36,7 +36,7 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(polymarket_last_trade_price, instance)"
+          "query": "label_values(polymarket_market_last_trade_price, instance)"
         },
         "refresh": 2,
         "regex": "",
@@ -47,7 +47,7 @@
       {
         "current": {},
         "datasource": { "type": "prometheus", "uid": "" },
-        "definition": "label_values(polymarket_last_trade_price{instance=~\"$instance\"}, outcome)",
+        "definition": "label_values(polymarket_market_last_trade_price{instance=~\"$instance\"}, outcome)",
         "hide": 2,
         "includeAll": true,
         "label": "Outcome",
@@ -56,7 +56,7 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(polymarket_last_trade_price{instance=~\"$instance\"}, outcome)"
+          "query": "label_values(polymarket_market_last_trade_price{instance=~\"$instance\"}, outcome)"
         },
         "refresh": 2,
         "regex": "",
@@ -68,7 +68,7 @@
   },
   "panels": [
     {
-      "title": "Last Trade Price",
+      "title": "Market Last Trade Price",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "" },
@@ -96,14 +96,14 @@
       },
       "targets": [
         {
-          "expr": "polymarket_last_trade_price{instance=~\"$instance\"}",
+          "expr": "polymarket_market_last_trade_price{instance=~\"$instance\"}",
           "legendFormat": "{{ question }} — {{ outcome }}",
           "refId": "A"
         }
       ]
     },
     {
-      "title": "$outcome Bid / Ask",
+      "title": "Market $outcome Bid / Ask",
       "description": "Spread bid and ask for $outcome outcome",
       "type": "timeseries",
       "repeat": "outcome",
@@ -146,19 +146,19 @@
       },
       "targets": [
         {
-          "expr": "polymarket_spread_bid{instance=~\"$instance\", outcome=\"$outcome\"}",
+          "expr": "polymarket_market_spread_bid{instance=~\"$instance\", outcome=\"$outcome\"}",
           "legendFormat": "bid",
           "refId": "A"
         },
         {
-          "expr": "polymarket_spread_ask{instance=~\"$instance\", outcome=\"$outcome\"}",
+          "expr": "polymarket_market_spread_ask{instance=~\"$instance\", outcome=\"$outcome\"}",
           "legendFormat": "ask",
           "refId": "B"
         }
       ]
     },
     {
-      "title": "Spread",
+      "title": "Market Spread",
       "description": "Bid-ask spread (ask - bid). Lower is tighter liquidity.",
       "type": "timeseries",
       "gridPos": { "h": 7, "w": 12, "x": 0, "y": 16 },
@@ -184,15 +184,15 @@
       },
       "targets": [
         {
-          "expr": "polymarket_spread{instance=~\"$instance\"}",
+          "expr": "polymarket_market_spread{instance=~\"$instance\"}",
           "legendFormat": "{{ question }} — {{ outcome }}",
           "refId": "A"
         }
       ]
     },
     {
-      "title": "Price Delta (5m)",
-      "description": "Rate of change using delta() — appropriate for gauge metrics",
+      "title": "Market Price Delta (15m)",
+      "description": "Price change over 15 minutes using delta(), which is appropriate for gauge metrics.",
       "type": "timeseries",
       "gridPos": { "h": 7, "w": 12, "x": 12, "y": 16 },
       "datasource": { "type": "prometheus", "uid": "" },
@@ -224,14 +224,14 @@
       },
       "targets": [
         {
-          "expr": "delta(polymarket_last_trade_price{instance=~\"$instance\"}[5m])",
+          "expr": "delta(polymarket_market_last_trade_price{instance=~\"$instance\"}[15m])",
           "legendFormat": "{{ question }} — {{ outcome }}",
           "refId": "A"
         }
       ]
     },
     {
-      "title": "Open Interest",
+      "title": "Market Open Interest",
       "type": "stat",
       "gridPos": { "h": 4, "w": 24, "x": 0, "y": 23 },
       "datasource": { "type": "prometheus", "uid": "" },
@@ -259,14 +259,14 @@
       },
       "targets": [
         {
-          "expr": "polymarket_open_interest{instance=~\"$instance\"}",
+          "expr": "polymarket_market_open_interest{instance=~\"$instance\"}",
           "legendFormat": "{{ question }}",
           "refId": "A"
         }
       ]
     },
     {
-      "title": "$outcome Fee Rate",
+      "title": "Market $outcome Fee Rate",
       "type": "stat",
       "repeat": "outcome",
       "repeatDirection": "h",
@@ -297,14 +297,14 @@
       },
       "targets": [
         {
-          "expr": "polymarket_fee_rate_bps{instance=~\"$instance\", outcome=\"$outcome\"}",
+          "expr": "polymarket_market_fee_rate_bps{instance=~\"$instance\", outcome=\"$outcome\"}",
           "legendFormat": "{{ outcome }}",
           "refId": "A"
         }
       ]
     },
-    {
-      "title": "$outcome Holders",
+        {
+            "title": "Market $outcome Holders",
       "type": "table",
       "repeat": "outcome",
       "repeatDirection": "h",
@@ -348,7 +348,7 @@
       },
       "targets": [
         {
-          "expr": "polymarket_top_holder_amount{instance=~\"$instance\", outcome=\"$outcome\"}",
+          "expr": "polymarket_market_top_holder_amount{instance=~\"$instance\", outcome=\"$outcome\"}",
           "legendFormat": "",
           "refId": "A",
           "instant": true,
@@ -384,5 +384,5 @@
       ]
     }
   ],
-  "version": 3
+  "version": 4
 }

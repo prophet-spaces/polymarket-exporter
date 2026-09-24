@@ -1,8 +1,9 @@
 services:
   polymarket-exporter:
-    build:
-      context: ../
-      dockerfile: Dockerfile
+    # build:
+    #   context: ../
+    #   dockerfile: Dockerfile
+    image: ghcr.io/prophet-spaces/polymarket-exporter:latest
     # environment:
     #   - CONFIG_PATH=/etc/polymarket-exporter/config.toml
     # volumes:
