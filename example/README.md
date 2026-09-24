@@ -20,13 +20,14 @@ Full Prometheus + Grafana + Alertmanager stack for monitoring Polymarket predict
 ## Quick Start
 
 ```bash
-cd examples/monitoring-stack
+cd example
 
 # (Optional) Set up Telegram alerts — see below
 cp .env.example .env
 # Edit .env with your bot token and chat ID
 
-docker compose up --build
+docker compose pull polymarket-exporter
+docker compose up -d
 ```
 
 ## Services
@@ -57,6 +58,18 @@ static_configs:
       - your-new-slug-here
 ```
 
+## Monitored Wallet
+
+The example scrapes one wallet every five minutes. Replace the zero address in
+`prometheus/prometheus.yml` with your own `0x` address before using it:
+
+```yaml
+  - job_name: polymarket-wallet
+    static_configs:
+      - targets:
+          - 0xyour-wallet-address
+```
+
 ## Telegram Alerts Setup
 
 1. Create a bot via [@BotFather](https://t.me/BotFather) on Telegram — save the bot token.
@@ -75,15 +88,19 @@ TELEGRAM_CHAT_ID=-1001234567890
 All polymarket metrics are **gauges** (not counters), so `rate()` cannot be used.
 The rules use gauge-appropriate PromQL functions:
 
-| Alert                  | Function     | Expression                                              | Why                                      |
-|------------------------|--------------|---------------------------------------------------------|------------------------------------------|
-| LargePriceMovement     | `delta()`    | `abs(delta(last_trade_price[5m])) > 0.05`              | Catches sudden price jumps/drops         |
-| WideSpread             | (direct)     | `(spread / tick_size) > 2` for 5m                     | Detects illiquid conditions (tick-normalised) |
-| LargeOpenInterestChange| `delta()`    | `abs(delta(open_interest[15m])) > 100000`               | Detects large money flows                |
-| HighVolatility         | `changes()`  | `changes(last_trade_price[5m]) > 20` for 2m            | Detects unusually frequent price changes |
-| SustainedPriceDrift    | `deriv()`    | `abs(deriv(last_trade_price[10m])) > 0.001` for 5m     | Detects steady directional movement      |
-| ExporterDown           | `up`         | `up{job="polymarket"} == 0` for 2m                     | Exporter health check                    |
-| WebSocketDisconnected  | (direct)     | `websocket_connected == 0` for 5m                      | Real-time feed health check              |
+| Alert                             | Function    | Expression                                                            | Why                                           |
+|-----------------------------------|-------------|-----------------------------------------------------------------------|-----------------------------------------------|
+| MarketLargePriceMovement          | `delta()`   | `abs(delta(polymarket_market_last_trade_price[15m])) > 0.05`          | Catches sudden price jumps/drops              |
+| MarketWideSpread                  | (direct)    | `(polymarket_market_spread / polymarket_market_tick_size) > 2` for 5m | Detects illiquid conditions (tick-normalised) |
+| MarketLargeOpenInterestChange     | `delta()`   | `abs(delta(polymarket_market_open_interest[15m])) > 100000`           | Detects large money flows                     |
+| MarketHighVolatility              | `changes()` | `changes(polymarket_market_last_trade_price[5m]) > 20` for 2m         | Detects unusually frequent price changes      |
+| MarketSustainedPriceDrift         | `deriv()`   | `abs(deriv(polymarket_market_last_trade_price[10m])) > 0.001` for 5m  | Detects steady directional movement           |
+| WalletLargePositionPriceMovement  | `delta()`   | `abs(delta(polymarket_wallet_position_current_price[15m])) > 0.05`    | Catches material position price moves         |
+| WalletLargePositionCashLoss       | `delta()`   | `-delta(polymarket_wallet_position_cash_pnl_usdc[5m]) > 100`         | Catches a cash loss above 100 USDC in 5m      |
+| WalletLargePositionPercentageLoss | `delta()`   | `-delta(polymarket_wallet_position_pnl_ratio[5m]) * 100 > 10`        | Catches a P&L drop above 10 points in 5m      |
+| WalletProbeFailing                | `up`        | `up{job="polymarket-wallet"} == 0` for 2m                             | Wallet scrape health check                    |
+| ExporterMarketProbeFailing        | `up`        | `up{job="polymarket-market"} == 0` for 2m                             | Market-probe health check                     |
+| ExporterWebSocketDisconnected     | (direct)    | `websocket_connected == 0` for 5m                                     | Real-time feed health check                   |
 
 ## Test Alertmanager
 

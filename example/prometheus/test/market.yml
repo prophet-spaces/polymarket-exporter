@@ -1,0 +1,95 @@
+rule_files:
+  - ../alert_rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: wide spread alerts only for an open wallet position
+    interval: 1m
+    input_series:
+      - series: 'polymarket_wallet_position_shares{wallet="0xwallet",condition_id="wide-spread",token_id="yes",question="Wide spread market",outcome="Yes"}'
+        values: '10 10 10 10 10 10'
+      - series: 'polymarket_market_spread{question="Wide spread market",outcome="Yes",token_id="yes"}'
+        values: '0.03 0.03 0.03 0.03 0.03 0.03'
+      - series: 'polymarket_market_tick_size{question="Wide spread market",outcome="Yes",token_id="yes"}'
+        values: '0.01 0.01 0.01 0.01 0.01 0.01'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: WalletMarketWideSpread
+        exp_alerts:
+          - exp_labels:
+              wallet: 0xwallet
+              condition_id: wide-spread
+              token_id: "yes"
+              question: Wide spread market
+              outcome: "Yes"
+              severity: warning
+            exp_annotations:
+              summary: Wide market spread for 0xwallet
+              description: Wide spread market (Yes) has a spread wider than 2 ticks.
+
+  - name: large open-interest change alerts for an open wallet position
+    interval: 1m
+    input_series:
+      - series: 'polymarket_wallet_position_shares{wallet="0xwallet",condition_id="open-interest",token_id="yes",question="Open interest market",outcome="Yes"}'
+        values: '10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10'
+      - series: 'polymarket_market_open_interest{question="Open interest market",condition_id="open-interest"}'
+        values: '100000 110000 120000 130000 140000 150000 160000 170000 180000 190000 200000 210000 220000 230000 240000 250000'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: WalletMarketLargeOpenInterestChange
+        exp_alerts:
+          - exp_labels:
+              wallet: 0xwallet
+              condition_id: open-interest
+              token_id: "yes"
+              question: Open interest market
+              outcome: "Yes"
+              severity: info
+            exp_annotations:
+              summary: Large open-interest change for 0xwallet
+              description: Open interest market (Yes) has open-interest movement above 100,000 USDC in 15 minutes.
+
+  - name: high market volatility alerts for an open wallet position
+    interval: 10s
+    input_series:
+      - series: 'polymarket_wallet_position_shares{wallet="0xwallet",condition_id="volatile",token_id="yes",question="Volatile market",outcome="Yes"}'
+        values: '10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10'
+      - series: 'polymarket_market_last_trade_price{question="Volatile market",outcome="Yes",token_id="yes"}'
+        values: '0.40 0.60 0.40 0.60 0.40 0.60 0.40 0.60 0.40 0.60 0.40 0.60 0.40 0.60 0.40 0.60 0.40 0.60 0.40 0.60 0.40 0.60 0.40 0.60 0.40 0.60 0.40 0.60 0.40 0.60 0.40 0.60 0.40 0.60 0.40 0.60 0.40 0.60 0.40 0.60 0.40 0.60 0.40 0.60'
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: WalletMarketHighVolatility
+        exp_alerts:
+          - exp_labels:
+              wallet: 0xwallet
+              condition_id: volatile
+              token_id: "yes"
+              question: Volatile market
+              outcome: "Yes"
+              severity: info
+            exp_annotations:
+              summary: High market volatility for 0xwallet
+              description: Volatile market (Yes) changed price more than 20 times in 5 minutes.
+
+  - name: sustained market drift alerts for an open wallet position
+    interval: 1m
+    input_series:
+      - series: 'polymarket_wallet_position_shares{wallet="0xwallet",condition_id="drifting",token_id="yes",question="Drifting market",outcome="Yes"}'
+        values: '10 10 10 10 10 10 10'
+      - series: 'polymarket_market_last_trade_price{question="Drifting market",outcome="Yes",token_id="yes"}'
+        values: '0.00 0.07 0.14 0.21 0.28 0.35 0.42'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: WalletMarketSustainedPriceDrift
+        exp_alerts:
+          - exp_labels:
+              wallet: 0xwallet
+              condition_id: drifting
+              token_id: "yes"
+              question: Drifting market
+              outcome: "Yes"
+              severity: warning
+            exp_annotations:
+              summary: Sustained market price drift for 0xwallet
+              description: Drifting market (Yes) is drifting faster than 0.001 per second.

@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  pull_request:
+
+jobs:
+  rust:
+    name: Rust tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run tests
+        run: cargo test --locked
+
+  prometheus-rules:
+    name: Prometheus alert rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test alert rules
+        run: >-
+          docker run --rm --entrypoint promtool
+          -v "$PWD:/work:ro" -w /work
+          prom/prometheus:v3.10.0
+          test rules example/prometheus/test/*.yml
