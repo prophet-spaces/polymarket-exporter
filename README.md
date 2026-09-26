@@ -128,7 +128,7 @@ Use the [multi-target exporter pattern](https://prometheus.io/docs/guides/multi-
 
 ```yaml
 scrape_configs:
-  - job_name: polymarket
+  - job_name: polymarket-market
     metrics_path: /probe
     scrape_interval: 10s
     static_configs:
