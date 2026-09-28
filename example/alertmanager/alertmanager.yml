@@ -17,6 +17,7 @@ receivers:
         parse_mode: HTML
         message: |-
           {{ range .Alerts }}
+          {{ if eq .Status "firing" }}🔴 <b>FIRING</b>{{ else }}✅ <b>RESOLVED</b>{{ end }}
           <b>{{ .Labels.alertname }}</b> [{{ .Labels.severity }}]
           {{ .Annotations.summary }}
           {{ .Annotations.description }}
