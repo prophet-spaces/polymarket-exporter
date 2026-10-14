@@ -73,6 +73,7 @@ impl Default for RateLimitsConfig {
         ]);
         let clob = HashMap::from([
             ("book".into(), RateLimitEntry { max_requests: 1500, window_secs: 10 }),
+            ("last_trade_price".into(), RateLimitEntry { max_requests: 200, window_secs: 10 }),
             ("fee_rate".into(), RateLimitEntry { max_requests: 200, window_secs: 10 }),
             ("tick_size".into(), RateLimitEntry { max_requests: 200, window_secs: 10 }),
             ("spread".into(), RateLimitEntry { max_requests: 1500, window_secs: 10 }),

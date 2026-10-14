@@ -155,10 +155,6 @@ async fn ensure_active(slug: &str, state: &ProbeState) -> anyhow::Result<()> {
                 Ok(book) => {
                     ts.min_order_size = book.min_order_size.as_deref().and_then(|s| s.parse().ok());
                     ts.tick_size = book.tick_size.as_deref().and_then(|s| s.parse().ok());
-                    ts.last_trade_price = book
-                        .last_trade_price
-                        .as_deref()
-                        .and_then(|s| s.parse().ok());
                     ts.best_bid = book
                         .bids
                         .iter()
@@ -177,6 +173,8 @@ async fn ensure_active(slug: &str, state: &ProbeState) -> anyhow::Result<()> {
                     error!("failed to fetch book for token {}: {:#}", ti.token_id, e);
                 }
             }
+
+            ts.last_trade_price = state.clob.get_last_trade_price(&ti.token_id).await?;
 
             match state.clob.get_fee_rate(&ti.token_id).await {
                 Ok(fr) => {

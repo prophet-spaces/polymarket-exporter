@@ -30,6 +30,10 @@ fn default_rate_limits_clob() {
     assert_eq!(book.max_requests, 1500);
     assert_eq!(book.window_secs, 10);
 
+    let last_trade_price = cfg.clob.get("last_trade_price").unwrap();
+    assert_eq!(last_trade_price.max_requests, 200);
+    assert_eq!(last_trade_price.window_secs, 10);
+
     let fee_rate = cfg.clob.get("fee_rate").expect("clob.fee_rate missing");
     assert_eq!(fee_rate.max_requests, 200);
 
