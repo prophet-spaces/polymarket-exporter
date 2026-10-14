@@ -17,7 +17,6 @@ pub struct OrderBookSummary {
     pub asks: Vec<OrderLevel>,
     pub min_order_size: Option<String>,
     pub tick_size: Option<String>,
-    pub last_trade_price: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -43,20 +42,49 @@ pub struct FeeRateResponse {
     pub base_fee: i64,
 }
 
+#[derive(Debug, Deserialize)]
+struct LastTradePriceResponse {
+    price: String,
+    side: String,
+}
+
+impl LastTradePriceResponse {
+    fn into_price(self) -> Result<Option<f64>> {
+        match self.side.as_str() {
+            // The Polymarket API returns a placeholder price of 0.5 when there are no trades.
+            "" => return Ok(None),
+            "BUY" | "SELL" => {}
+            _ => anyhow::bail!("invalid last trade side: {}", self.side),
+        }
+        let price: f64 = self.price.parse().context("invalid last trade price")?;
+        anyhow::ensure!(
+            price.is_finite() && (0.0..=1.0).contains(&price),
+            "last trade price out of range: {}",
+            price
+        );
+        Ok(Some(price))
+    }
+}
+
 pub struct ClobClient {
     http: reqwest::Client,
     rate_limiter: Arc<RateLimiterService>,
+    base_url: String,
 }
 
 impl ClobClient {
     pub fn new(http: reqwest::Client, rate_limiter: Arc<RateLimiterService>) -> Self {
-        Self { http, rate_limiter }
+        Self {
+            http,
+            rate_limiter,
+            base_url: CLOB_BASE.to_string(),
+        }
     }
 
     pub async fn get_book(&self, token_id: &str) -> Result<OrderBookSummary> {
         self.rate_limiter.acquire("clob", "book").await;
 
-        let url = format!("{}/book", CLOB_BASE);
+        let url = format!("{}/book", self.base_url);
         let resp = self
             .http
             .get(&url)
@@ -74,10 +102,35 @@ impl ClobClient {
         resp.json().await.context("failed to deserialize orderbook")
     }
 
+    pub async fn get_last_trade_price(&self, token_id: &str) -> Result<Option<f64>> {
+        self.rate_limiter.acquire("clob", "last_trade_price").await;
+
+        let url = format!("{}/last-trade-price", self.base_url);
+        let resp = self
+            .http
+            .get(&url)
+            .query(&[("token_id", token_id)])
+            .send()
+            .await
+            .context("failed to request CLOB last trade price")?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!("CLOB /last-trade-price returned {}: {}", status, body);
+        }
+
+        let trade: LastTradePriceResponse = resp
+            .json()
+            .await
+            .context("failed to deserialize last trade price")?;
+        trade.into_price()
+    }
+
     pub async fn get_fee_rate(&self, token_id: &str) -> Result<FeeRateResponse> {
         self.rate_limiter.acquire("clob", "fee_rate").await;
 
-        let url = format!("{}/fee-rate", CLOB_BASE);
+        let url = format!("{}/fee-rate", self.base_url);
         let resp = self
             .http
             .get(&url)
@@ -98,7 +151,7 @@ impl ClobClient {
     pub async fn get_market(&self, condition_id: &str) -> Result<ClobMarket> {
         self.rate_limiter.acquire("clob", "markets").await;
 
-        let url = format!("{}/markets/{}", CLOB_BASE, condition_id);
+        let url = format!("{}/markets/{}", self.base_url, condition_id);
         let resp = self
             .http
             .get(&url)
@@ -112,7 +165,9 @@ impl ClobClient {
             anyhow::bail!("CLOB /markets returned {}: {}", status, body);
         }
 
-        resp.json().await.context("failed to deserialize CLOB market")
+        resp.json()
+            .await
+            .context("failed to deserialize CLOB market")
     }
 }
 
