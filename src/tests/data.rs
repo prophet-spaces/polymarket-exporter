@@ -48,14 +48,14 @@ fn display_name_all_empty() {
 }
 
 #[test]
-fn serde_holder_camel_case() {
+fn serde_holder_snake_case() {
     let json = r#"{
-        "proxyWallet": "0x123",
+        "proxy_wallet": "0x123",
         "name": "Alice",
         "pseudonym": "alice_pm",
         "amount": 42.5,
-        "outcomeIndex": 1,
-        "profileImage": "https://example.com/img.png"
+        "outcome_index": 1,
+        "profile_image": "https://example.com/img.png"
     }"#;
     let h: Holder = serde_json::from_str(json).unwrap();
     assert_eq!(h.proxy_wallet, Some("0x123".to_string()));
@@ -75,7 +75,7 @@ fn serde_holder_missing_optional_fields() {
 
 #[test]
 fn serde_open_interest_with_null_value() {
-    let json = r#"{"market": "0xabc", "value": null}"#;
+    let json = r#"{"condition_id": "0xabc", "value": null}"#;
     let oi: OpenInterest = serde_json::from_str(json).unwrap();
     assert_eq!(oi.market, "0xabc");
     assert_eq!(oi.value, None);
@@ -83,7 +83,7 @@ fn serde_open_interest_with_null_value() {
 
 #[test]
 fn serde_open_interest_with_value() {
-    let json = r#"{"market": "0xdef", "value": 12345.67}"#;
+    let json = r#"{"condition_id": "0xdef", "value": 12345.67}"#;
     let oi: OpenInterest = serde_json::from_str(json).unwrap();
     assert_eq!(oi.value, Some(12345.67));
 }
@@ -91,7 +91,7 @@ fn serde_open_interest_with_value() {
 #[test]
 fn serde_meta_holder() {
     let json = r#"{
-        "token": "tok1",
+        "token_id": "tok1",
         "holders": [{"name": "Alice", "amount": 100.0}]
     }"#;
     let mh: MetaHolder = serde_json::from_str(json).unwrap();
@@ -101,30 +101,38 @@ fn serde_meta_holder() {
     assert_eq!(holders[0].name, Some("Alice".to_string()));
 }
 
-#[test]
-fn serde_position() {
-    let json = r#"{
-        "asset": "token-1",
-        "conditionId": "0xcondition",
-        "size": 10.0,
-        "avgPrice": 0.5,
-        "initialValue": 5.0,
-        "currentValue": 6.5,
-        "cashPnl": 1.5,
-        "percentPnl": 25.0,
-        "realizedPnl": 0.25,
-        "curPrice": 0.65,
+const POSITION_JSON: &str = r#"{
+        "token_id": "token-1",
+        "condition_id": "0xcondition",
+        "current_size": 10.0,
+        "total_size": 20.0,
+        "avg_price": 0.5,
+        "entry_cost_usdc": 5.0,
+        "total_cost_usdc": 5.1,
+        "current_value": 6.5,
+        "unrealized_pnl": 1.5,
+        "total_pnl": 1.75,
+        "percent_pnl": 30.0,
+        "realized_pnl": 0.25,
+        "current_price": 0.65,
         "redeemable": false,
         "title": "Will it happen?",
         "outcome": "Yes"
     }"#;
-    let position: Position = serde_json::from_str(json).unwrap();
+
+#[test]
+fn serde_position() {
+    let position: Position = serde_json::from_str(POSITION_JSON).unwrap();
     assert_eq!(position.asset, "token-1");
+    assert_eq!(position.condition_id, "0xcondition");
+    assert_eq!(position.size, 10.0);
     assert_eq!(position.avg_price, 0.5);
     assert_eq!(position.initial_value, 5.0);
     assert_eq!(position.current_value, 6.5);
     assert_eq!(position.cash_pnl, 1.5);
-    assert_eq!(position.percent_pnl, 25.0);
+    assert_eq!(position.percent_pnl, 30.0);
+    assert_eq!(position.cur_price, 0.65);
+    assert_eq!(position.realized_pnl, 0.25);
     assert!(!position.redeemable);
 }
 
@@ -137,7 +145,7 @@ fn serde_user_stats_all_time_realized_pnl() {
             }
         }
     }"#;
-    let stats: UserStatsResponse = serde_json::from_str(json).unwrap();
+    let stats: DataResponse<Option<UserStats>> = serde_json::from_str(json).unwrap();
 
     assert_eq!(
         stats
@@ -150,7 +158,192 @@ fn serde_user_stats_all_time_realized_pnl() {
 
 #[test]
 fn serde_user_stats_all_time_pnl_can_be_unavailable() {
-    let stats: UserStatsResponse = serde_json::from_str(r#"{"data": null}"#).unwrap();
+    let stats: DataResponse<Option<UserStats>> = serde_json::from_str(r#"{"data": null}"#).unwrap();
 
     assert!(stats.data.is_none());
+}
+
+async fn mock_client(app: axum::Router) -> (DataClient, tokio::task::JoinHandle<()>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let client = DataClient {
+        http: reqwest::Client::new(),
+        rate_limiter: Arc::new(RateLimiterService::from_config(&Default::default())),
+        base_url,
+    };
+    (client, server)
+}
+
+#[tokio::test]
+async fn positions_follow_cursors_through_empty_pages_and_fail_on_bad_pages() {
+    use axum::{extract::Query, http::StatusCode, routing::get, Json, Router};
+    use serde_json::json;
+    use std::collections::HashMap;
+
+    let app = Router::new().route("/v2/positions", get(
+        |Query(params): Query<HashMap<String, String>>| async move {
+            assert_eq!(params["status"], "OPEN");
+            assert_eq!(params["filter_type"], "TOKENS");
+            assert_eq!(params["filter_amount"], "0");
+            assert_eq!(params["limit"], "1000");
+            assert!(!params.contains_key("offset"));
+            assert!(!params.contains_key("sizeThreshold"));
+            let cursor = params.get("cursor").map(String::as_str);
+            let position: serde_json::Value = serde_json::from_str(POSITION_JSON).unwrap();
+            let body = match (params["user"].as_str(), cursor) {
+                ("empty", _) => json!({"data": [], "pagination": {"has_more": false, "next_cursor": null}}),
+                (_, None) => json!({"data": [position], "pagination": {"has_more": true, "next_cursor": "next/+="}}),
+                ("http-error", Some(_)) => return (StatusCode::BAD_REQUEST, Json(json!({"error": "bad cursor"}))),
+                ("malformed", Some(_)) => json!({"data": [{}], "pagination": {"has_more": false}}),
+                ("missing-pagination", Some(_)) => json!({"data": []}),
+                ("missing-cursor", Some(_)) => json!({"data": [], "pagination": {"has_more": true}}),
+                ("repeated-cursor", Some(_)) => json!({"data": [], "pagination": {"has_more": true, "next_cursor": "next/+="}}),
+                ("wallet", Some("next/+=")) => json!({"data": [], "pagination": {"has_more": true, "next_cursor": "last"}}),
+                ("wallet", Some("last")) => json!({"data": [position], "pagination": {"has_more": false, "next_cursor": null}}),
+                _ => panic!("unexpected request: {params:?}"),
+            };
+            (StatusCode::OK, Json(body))
+        }
+    ));
+    let (client, server) = mock_client(app).await;
+    let positions = client.get_positions("wallet").await.unwrap();
+    assert_eq!(positions.len(), 2);
+    assert_eq!(positions[1].cash_pnl, 1.5);
+    assert!(client.get_positions("empty").await.unwrap().is_empty());
+    for (wallet, message) in [
+        ("http-error", "Data API /v2/positions returned 400"),
+        ("malformed", "failed to deserialize wallet positions"),
+        (
+            "missing-pagination",
+            "failed to deserialize wallet positions",
+        ),
+        ("missing-cursor", "inconsistent pagination"),
+        ("repeated-cursor", "repeated cursor"),
+    ] {
+        let error = client.get_positions(wallet).await.unwrap_err();
+        assert!(error.to_string().contains(message), "{wallet}: {error}");
+    }
+    server.abort();
+}
+
+#[tokio::test]
+async fn market_reads_batch_conditions_and_keep_only_top_holder_page() {
+    use axum::{
+        extract::{OriginalUri, Query},
+        routing::get,
+        Json, Router,
+    };
+    use serde_json::json;
+    use std::collections::HashMap;
+
+    let handler = |OriginalUri(uri): OriginalUri, Query(params): Query<HashMap<String, String>>| async move {
+        assert!(!params.contains_key("market"));
+        assert!(!params.contains_key("offset"));
+        assert!(!params.contains_key("cursor"));
+        let conditions: Vec<_> = params["condition"].split(',').collect();
+        assert!(!conditions.is_empty() && conditions.len() <= 20);
+        if uri.path() == "/v2/oi" {
+            assert_eq!(params.len(), 1);
+            Json(
+                json!({"data": conditions.iter().map(|id| json!({"condition_id": id, "value": 42.0})).collect::<Vec<_>>()}),
+            )
+        } else {
+            assert_eq!(params["limit"], "20");
+            Json(json!({
+                "data": conditions.iter().map(|id| json!({"token_id": id, "holders": [{"proxy_wallet": "0x123", "amount": 42.0}]})).collect::<Vec<_>>(),
+                "pagination": {"has_more": true, "next_cursor": "not-needed"}
+            }))
+        }
+    };
+    let app = Router::new()
+        .route("/v2/oi", get(handler))
+        .route("/v2/holders", get(handler));
+    let (client, server) = mock_client(app).await;
+    let ids: Vec<String> = (0..41).map(|i| format!("0x{i:064x}")).collect();
+    let refs: Vec<&str> = ids.iter().map(String::as_str).collect();
+    let oi = client.get_open_interest(&refs).await.unwrap();
+    assert_eq!(
+        oi.iter().map(|row| row.market.as_str()).collect::<Vec<_>>(),
+        refs
+    );
+    assert_eq!(oi[40].value, Some(42.0));
+    let holders = client.get_top_holders(&refs).await.unwrap();
+    assert_eq!(
+        holders
+            .iter()
+            .map(|row| row.token.as_deref().unwrap())
+            .collect::<Vec<_>>(),
+        refs
+    );
+    assert_eq!(
+        holders[40].holders.as_ref().unwrap()[0].display_name(),
+        "0x123"
+    );
+    assert!(client.get_open_interest(&[]).await.unwrap().is_empty());
+    assert!(client.get_top_holders(&[]).await.unwrap().is_empty());
+    server.abort();
+}
+
+#[tokio::test]
+async fn data_reads_accept_empty_results_and_surface_http_and_decode_errors() {
+    use axum::{extract::Query, http::StatusCode, routing::get, Router};
+    use std::collections::HashMap;
+
+    let handler = |Query(params): Query<HashMap<String, String>>| async move {
+        match params
+            .get("condition")
+            .or_else(|| params.get("user"))
+            .unwrap()
+            .as_str()
+        {
+            "empty" => (StatusCode::OK, r#"{"data":[]}"#),
+            "unknown-user" => (StatusCode::OK, r#"{"data":null}"#),
+            "known-user" => (
+                StatusCode::OK,
+                r#"{"data":{"all_time_pnl":{"realized_pnl":12.5}}}"#,
+            ),
+            "no-pnl" => (StatusCode::OK, r#"{"data":{"all_time_pnl":null}}"#),
+            "malformed" => (StatusCode::OK, r#"{"data":"invalid"}"#),
+            _ => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                r#"{"error":"unavailable"}"#,
+            ),
+        }
+    };
+    let app = Router::new()
+        .route("/v2/oi", get(handler))
+        .route("/v2/holders", get(handler))
+        .route("/v2/user-stats", get(handler));
+    let (client, server) = mock_client(app).await;
+    assert!(client
+        .get_open_interest(&["empty"])
+        .await
+        .unwrap()
+        .is_empty());
+    assert!(client.get_top_holders(&["empty"]).await.unwrap().is_empty());
+    assert_eq!(
+        client
+            .get_all_time_realized_pnl("unknown-user")
+            .await
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        client.get_all_time_realized_pnl("no-pnl").await.unwrap(),
+        None
+    );
+    assert_eq!(
+        client
+            .get_all_time_realized_pnl("known-user")
+            .await
+            .unwrap(),
+        Some(12.5)
+    );
+    for input in ["malformed", "http-error"] {
+        assert!(client.get_open_interest(&[input]).await.is_err());
+        assert!(client.get_top_holders(&[input]).await.is_err());
+        assert!(client.get_all_time_realized_pnl(input).await.is_err());
+    }
+    server.abort();
 }

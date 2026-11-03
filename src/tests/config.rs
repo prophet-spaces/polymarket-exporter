@@ -52,8 +52,12 @@ fn default_rate_limits_clob() {
 fn default_rate_limits_data_api() {
     let cfg = RateLimitsConfig::default();
     let general = cfg.data_api.get("general").expect("data_api.general missing");
-    assert_eq!(general.max_requests, 1000);
+    assert_eq!(general.max_requests, 800);
     assert_eq!(general.window_secs, 10);
+
+    let positions = cfg.data_api.get("positions").expect("data_api.positions missing");
+    assert_eq!(positions.max_requests, 200);
+    assert_eq!(positions.window_secs, 10);
 
     let holders = cfg.data_api.get("holders").expect("data_api.holders missing");
     assert_eq!(holders.max_requests, 150);
