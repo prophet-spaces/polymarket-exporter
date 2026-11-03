@@ -80,7 +80,8 @@ impl Default for RateLimitsConfig {
             ("markets".into(), RateLimitEntry { max_requests: 500, window_secs: 10 }),
         ]);
         let data_api = HashMap::from([
-            ("general".into(), RateLimitEntry { max_requests: 1000, window_secs: 10 }),
+            ("general".into(), RateLimitEntry { max_requests: 800, window_secs: 10 }),
+            ("positions".into(), RateLimitEntry { max_requests: 200, window_secs: 10 }),
             ("holders".into(), RateLimitEntry { max_requests: 150, window_secs: 10 }),
         ]);
         Self { gamma, clob, data_api }
