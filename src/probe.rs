@@ -115,8 +115,6 @@ async fn ensure_active(slug: &str, state: &ProbeState) -> anyhow::Result<()> {
 
     let resolved = state.gamma.resolve_slug(slug).await?;
 
-    // Fetch authoritative token-outcome mappings from CLOB API.
-    // Falls back to Gamma's mapping if CLOB fetch fails.
     let mut clob_tokens: HashMap<String, Vec<TokenInfo>> = HashMap::new();
     for market in &resolved.markets {
         match state.clob.get_market(&market.condition_id).await {
@@ -204,7 +202,6 @@ async fn ensure_active(slug: &str, state: &ProbeState) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Refresh REST-polled data (holders, OI) if their cache TTLs have expired.
 async fn refresh_rest_data(slug: &str, state: &ProbeState) -> anyhow::Result<()> {
     let cache_cfg = &state.registry.cache_config;
     let oi_ttl = Duration::from_secs(cache_cfg.open_interest_ttl_secs);
@@ -359,7 +356,6 @@ async fn render_market_metrics(slug: &str, registry: &SlugRegistry) -> String {
                 let _ = writeln!(out, "polymarket_market_fee_rate_bps{{{}}} {}", labels, v);
             }
 
-            // Top holders for this token
             if let Some(holders) = ss.get_top_holders(tid) {
                 for (rank, holder) in holders.iter().enumerate() {
                     let amount = holder.amount.unwrap_or(0.0);
@@ -380,7 +376,6 @@ async fn render_market_metrics(slug: &str, registry: &SlugRegistry) -> String {
             }
         }
 
-        // Open interest per condition_id (market-level, not per-token)
         if let Some(oi) = ss.get_open_interest(cid) {
             let oi_labels = format!(
                 "question=\"{}\",condition_id=\"{}\"",
@@ -457,7 +452,7 @@ fn render_wallet_metrics(
     }
 
     for position in positions {
-        if position.redeemable {
+        if position.redeemable || position.status == "CLOSED" {
             continue;
         }
 
@@ -542,7 +537,92 @@ fn render_wallet_metrics(
         );
     }
 
+    render_wallet_pnl_metrics(&mut out, wallet, positions);
+
     out
+}
+
+fn render_wallet_pnl_metrics(out: &mut String, wallet: &str, positions: &[Position]) {
+    struct EventPnl {
+        realized: f64,
+        unrealized: f64,
+        first_entry: i64,
+        last_activity: i64,
+        status: u8,
+    }
+    for (name, help) in [
+        ("polymarket_wallet_pnl_snapshot_complete", "One when the wallet probe successfully read the complete open and closed books"),
+        ("polymarket_wallet_event_pnl_usdc", "Cumulative event P&L including open, redeemable and closed positions; component is realized, unrealized or total"),
+        ("polymarket_wallet_event_first_entry_timestamp_seconds", "First acquisition in an event, or zero when unknown"),
+        ("polymarket_wallet_event_last_activity_timestamp_seconds", "Latest trade or position activity in an event, or zero when unknown"),
+        ("polymarket_wallet_event_status", "Event holdings status: 0 closed, 1 redeemable, 2 open"),
+    ] {
+        write_help_type(out, name, help, "gauge");
+    }
+    let _ = writeln!(
+        out,
+        "polymarket_wallet_pnl_snapshot_complete{{wallet=\"{}\"}} 1",
+        escape_label(wallet)
+    );
+
+    let mut events = std::collections::BTreeMap::new();
+    for p in positions {
+        let status = if p.status == "CLOSED" {
+            0
+        } else if p.redeemable {
+            1
+        } else {
+            2
+        };
+        let event = events
+            .entry((&p.event_id, &p.event_slug))
+            .or_insert(EventPnl {
+                realized: 0.0,
+                unrealized: 0.0,
+                first_entry: p.first_entry_at,
+                last_activity: p.last_event_at,
+                status: 0,
+            });
+        event.realized += p.realized_pnl;
+        event.unrealized += p.cash_pnl;
+        event.first_entry = event.first_entry.min(p.first_entry_at);
+        event.last_activity = event.last_activity.max(p.last_event_at);
+        event.status = event.status.max(status);
+    }
+    for ((event_id, event_slug), event) in events {
+        let labels = format!(
+            "wallet=\"{}\",event_id=\"{}\",event_slug=\"{}\"",
+            escape_label(wallet),
+            escape_label(event_id),
+            escape_label(event_slug)
+        );
+        for (component, value) in [
+            ("realized", event.realized),
+            ("unrealized", event.unrealized),
+            ("total", event.realized + event.unrealized),
+        ] {
+            let _ = writeln!(
+                out,
+                "polymarket_wallet_event_pnl_usdc{{{},component=\"{}\"}} {}",
+                labels, component, value
+            );
+        }
+        let _ = writeln!(
+            out,
+            "polymarket_wallet_event_first_entry_timestamp_seconds{{{}}} {}",
+            labels, event.first_entry
+        );
+        let _ = writeln!(
+            out,
+            "polymarket_wallet_event_status{{{}}} {}",
+            labels, event.status
+        );
+        let _ = writeln!(
+            out,
+            "polymarket_wallet_event_last_activity_timestamp_seconds{{{}}} {}",
+            labels, event.last_activity
+        );
+    }
 }
 
 fn write_help_type(out: &mut String, name: &str, help: &str, metric_type: &str) {

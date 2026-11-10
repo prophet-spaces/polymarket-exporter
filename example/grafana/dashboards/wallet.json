@@ -43,10 +43,296 @@
         "skipUrlSync": false,
         "sort": 1,
         "type": "query"
+      },
+      {
+        "name": "result",
+        "label": "Event result",
+        "type": "custom",
+        "query": "All : >= -Inf,Gains : > 0,Losses : < 0",
+        "current": {
+          "text": "All",
+          "value": ">= -Inf"
+        },
+        "options": [
+          {
+            "text": "All",
+            "value": ">= -Inf",
+            "selected": true
+          },
+          {
+            "text": "Gains",
+            "value": "> 0",
+            "selected": false
+          },
+          {
+            "text": "Losses",
+            "value": "< 0",
+            "selected": false
+          }
+        ],
+        "hide": 0,
+        "multi": false,
+        "includeAll": false,
+        "skipUrlSync": false
       }
     ]
   },
   "panels": [
+    {
+      "id": 105,
+      "title": "Event P&L During Selected Range",
+      "description": "Current holdings and events with P&L changes or position activity during the selected range. Earlier closed events with no changes are hidden. Missing history stays unavailable.",
+      "type": "table",
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": ""
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 2,
+          "noValue": "No data or matching events",
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Missing history",
+                  "color": "orange"
+                }
+              }
+            }
+          ],
+          "custom": {
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Event"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 240
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Period P&L"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 0
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Realized Δ"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 0
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Unrealized Δ"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 0
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Status at end"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "Closed"
+                      },
+                      "1": {
+                        "text": "Redeemable"
+                      },
+                      "2": {
+                        "text": "Open"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Impact"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Impact",
+            "desc": true
+          }
+        ],
+        "footer": {
+          "show": false
+        },
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "expr": "(((((last_over_time(polymarket_wallet_event_pnl_usdc{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__to:date:seconds}) - ((last_over_time(polymarket_wallet_event_pnl_usdc{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__from:date:seconds}) and on(instance,job) ((last_over_time(up{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__from:date:seconds}) == 1) and on(instance,job) (last_over_time(polymarket_wallet_pnl_snapshot_complete{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__from:date:seconds}) == 1))) or (last_over_time(polymarket_wallet_event_pnl_usdc{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__to:date:seconds}) * 0 and ignoring(component) (last_over_time(polymarket_wallet_event_first_entry_timestamp_seconds{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__to:date:seconds}) > ${__from:date:seconds})))) or (((last_over_time(polymarket_wallet_event_pnl_usdc{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__to:date:seconds}) unless (last_over_time(polymarket_wallet_event_pnl_usdc{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__to:date:seconds}) - ((last_over_time(polymarket_wallet_event_pnl_usdc{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__from:date:seconds}) and on(instance,job) ((last_over_time(up{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__from:date:seconds}) == 1) and on(instance,job) (last_over_time(polymarket_wallet_pnl_snapshot_complete{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__from:date:seconds}) == 1))) or (last_over_time(polymarket_wallet_event_pnl_usdc{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__to:date:seconds}) * 0 and ignoring(component) (last_over_time(polymarket_wallet_event_first_entry_timestamp_seconds{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__to:date:seconds}) > ${__from:date:seconds}))))) or ((last_over_time(polymarket_wallet_event_pnl_usdc{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__from:date:seconds}) and on(instance,job) ((last_over_time(up{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__from:date:seconds}) == 1) and on(instance,job) (last_over_time(polymarket_wallet_pnl_snapshot_complete{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__from:date:seconds}) == 1))) unless last_over_time(polymarket_wallet_event_pnl_usdc{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__to:date:seconds}))) * NaN) or label_replace((abs((last_over_time(polymarket_wallet_event_pnl_usdc{job=\"polymarket-wallet\",instance=~\"$wallet\",component=\"total\"}[10m] @ ${__to:date:seconds}) - ((last_over_time(polymarket_wallet_event_pnl_usdc{job=\"polymarket-wallet\",instance=~\"$wallet\",component=\"total\"}[10m] @ ${__from:date:seconds}) and on(instance,job) ((last_over_time(up{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__from:date:seconds}) == 1) and on(instance,job) (last_over_time(polymarket_wallet_pnl_snapshot_complete{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__from:date:seconds}) == 1))) or (last_over_time(polymarket_wallet_event_pnl_usdc{job=\"polymarket-wallet\",instance=~\"$wallet\",component=\"total\"}[10m] @ ${__to:date:seconds}) * 0 and ignoring(component) (last_over_time(polymarket_wallet_event_first_entry_timestamp_seconds{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__to:date:seconds}) > ${__from:date:seconds}))))) * 1), \"component\", \"impact\", \"event_id\", \".*\") or label_replace((last_over_time(polymarket_wallet_event_status{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__to:date:seconds}) * 1), \"component\", \"status\", \"event_id\", \".*\")) and ignoring(component) (((last_over_time(polymarket_wallet_event_pnl_usdc{job=\"polymarket-wallet\",instance=~\"$wallet\",component=\"total\"}[10m] @ ${__to:date:seconds}) - ((last_over_time(polymarket_wallet_event_pnl_usdc{job=\"polymarket-wallet\",instance=~\"$wallet\",component=\"total\"}[10m] @ ${__from:date:seconds}) and on(instance,job) ((last_over_time(up{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__from:date:seconds}) == 1) and on(instance,job) (last_over_time(polymarket_wallet_pnl_snapshot_complete{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__from:date:seconds}) == 1))) or (last_over_time(polymarket_wallet_event_pnl_usdc{job=\"polymarket-wallet\",instance=~\"$wallet\",component=\"total\"}[10m] @ ${__to:date:seconds}) * 0 and ignoring(component) (last_over_time(polymarket_wallet_event_first_entry_timestamp_seconds{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__to:date:seconds}) > ${__from:date:seconds})))) ${result:raw}) or ((last_over_time(polymarket_wallet_event_pnl_usdc{job=\"polymarket-wallet\",instance=~\"$wallet\",component=\"total\"}[10m] @ ${__to:date:seconds}) unless (last_over_time(polymarket_wallet_event_pnl_usdc{job=\"polymarket-wallet\",instance=~\"$wallet\",component=\"total\"}[10m] @ ${__to:date:seconds}) - ((last_over_time(polymarket_wallet_event_pnl_usdc{job=\"polymarket-wallet\",instance=~\"$wallet\",component=\"total\"}[10m] @ ${__from:date:seconds}) and on(instance,job) ((last_over_time(up{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__from:date:seconds}) == 1) and on(instance,job) (last_over_time(polymarket_wallet_pnl_snapshot_complete{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__from:date:seconds}) == 1))) or (last_over_time(polymarket_wallet_event_pnl_usdc{job=\"polymarket-wallet\",instance=~\"$wallet\",component=\"total\"}[10m] @ ${__to:date:seconds}) * 0 and ignoring(component) (last_over_time(polymarket_wallet_event_first_entry_timestamp_seconds{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__to:date:seconds}) > ${__from:date:seconds}))))) or ((last_over_time(polymarket_wallet_event_pnl_usdc{job=\"polymarket-wallet\",instance=~\"$wallet\",component=\"total\"}[10m] @ ${__from:date:seconds}) and on(instance,job) ((last_over_time(up{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__from:date:seconds}) == 1) and on(instance,job) (last_over_time(polymarket_wallet_pnl_snapshot_complete{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__from:date:seconds}) == 1))) unless last_over_time(polymarket_wallet_event_pnl_usdc{job=\"polymarket-wallet\",instance=~\"$wallet\",component=\"total\"}[10m] @ ${__to:date:seconds}))))) and on(instance,job) ((last_over_time(up{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__to:date:seconds}) == 1) and on(instance,job) (last_over_time(polymarket_wallet_pnl_snapshot_complete{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__to:date:seconds}) == 1))) and ignoring(component) ((last_over_time(polymarket_wallet_event_status{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__to:date:seconds}) > 0) or (last_over_time(polymarket_wallet_event_status{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__from:date:seconds}) > 0) or (max without(component) (abs((last_over_time(polymarket_wallet_event_pnl_usdc{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__to:date:seconds}) - ((last_over_time(polymarket_wallet_event_pnl_usdc{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__from:date:seconds}) and on(instance,job) ((last_over_time(up{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__from:date:seconds}) == 1) and on(instance,job) (last_over_time(polymarket_wallet_pnl_snapshot_complete{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__from:date:seconds}) == 1))) or (last_over_time(polymarket_wallet_event_pnl_usdc{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__to:date:seconds}) * 0 and ignoring(component) (last_over_time(polymarket_wallet_event_first_entry_timestamp_seconds{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__to:date:seconds}) > ${__from:date:seconds})))))) > 0) or ((last_over_time(polymarket_wallet_event_last_activity_timestamp_seconds{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__to:date:seconds}) >= ${__from:date:seconds}) and (last_over_time(polymarket_wallet_event_last_activity_timestamp_seconds{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__to:date:seconds}) <= ${__to:date:seconds})) or (last_over_time(polymarket_wallet_event_status{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__from:date:seconds}) unless last_over_time(polymarket_wallet_event_status{job=\"polymarket-wallet\",instance=~\"$wallet\"}[10m] @ ${__to:date:seconds}))))",
+          "refId": "A",
+          "instant": true,
+          "range": false,
+          "format": "time_series"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "valueLabel": "component"
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "instance": true,
+              "job": true,
+              "wallet": true,
+              "event_id": true,
+              "__name__": true
+            },
+            "indexByName": {
+              "event_slug": 0,
+              "total": 1,
+              "realized": 2,
+              "unrealized": 3,
+              "status": 4,
+              "impact": 5
+            },
+            "renameByName": {
+              "event_slug": "Event",
+              "total": "Period P&L",
+              "realized": "Realized Δ",
+              "unrealized": "Unrealized Δ",
+              "status": "Status at end",
+              "impact": "Impact"
+            }
+          }
+        }
+      ]
+    },
     {
       "title": "Wallet Position Value",
       "type": "stat",
@@ -157,7 +443,7 @@
     {
       "title": "Wallet Position Prices",
       "type": "timeseries",
-      "gridPos": { "h": 18, "w": 24, "x": 0, "y": 5 },
+      "gridPos": { "h": 18, "w": 24, "x": 0, "y": 17 },
       "datasource": { "type": "prometheus", "uid": "" },
       "fieldConfig": {
         "defaults": {
@@ -188,7 +474,7 @@
       "title": "Wallet Positions",
       "description": "Every open position for the selected wallet. Unrealized gain is current value minus traded amount.",
       "type": "table",
-      "gridPos": { "h": 38, "w": 24, "x": 0, "y": 23 },
+      "gridPos": { "h": 38, "w": 24, "x": 0, "y": 35 },
       "datasource": { "type": "prometheus", "uid": "" },
       "fieldConfig": {
         "defaults": {},

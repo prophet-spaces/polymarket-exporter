@@ -31,19 +31,15 @@ struct WsEvent {
     #[allow(dead_code)]
     market: Option<String>,
 
-    // book
     bids: Option<Vec<BookLevel>>,
     asks: Option<Vec<BookLevel>>,
 
-    // best_bid_ask
     best_bid: Option<String>,
     best_ask: Option<String>,
     spread: Option<String>,
 
-    // last_trade_price
     price: Option<String>,
 
-    // tick_size_change
     new_tick_size: Option<String>,
 }
 
@@ -54,9 +50,6 @@ struct BookLevel {
     size: String,
 }
 
-/// Long-running WebSocket manager task.
-/// Waits for the first Subscribe command before connecting, then keeps
-/// the connection alive, dispatching events to `registry`.
 pub async fn run_ws_manager(
     registry: Arc<SlugRegistry>,
     mut cmd_rx: mpsc::Receiver<WsCommand>,
@@ -64,7 +57,6 @@ pub async fn run_ws_manager(
 ) {
     let mut pending_subscribes: Vec<String> = Vec::new();
 
-    // Wait for at least one subscription before connecting.
     info!("WebSocket manager waiting for first subscription...");
     loop {
         match cmd_rx.recv().await {
@@ -120,7 +112,6 @@ async fn handle_connection(
 ) -> Result<()> {
     let (mut sink, mut stream) = ws_stream.split();
 
-    // Collect all token IDs we need to subscribe to (existing + pending).
     let mut all_ids = registry.all_token_ids().await;
     all_ids.extend(pending_subscribes.drain(..));
     all_ids.sort();
@@ -195,7 +186,6 @@ async fn handle_connection(
                         anyhow::bail!("read timeout");
                     }
                     Ok(Some(Ok(_))) => {
-                        // Binary or other frame types — ignore
                     }
                 }
             }

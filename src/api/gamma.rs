@@ -35,7 +35,6 @@ pub struct GammaMarket {
     pub order_min_size: Option<f64>,
 }
 
-/// Parsed token info extracted from a GammaMarket.
 #[derive(Debug, Clone)]
 pub struct TokenInfo {
     pub token_id: String,
@@ -43,8 +42,6 @@ pub struct TokenInfo {
 }
 
 impl GammaMarket {
-    /// Parse `clobTokenIds` (JSON array string) and `outcomes` (JSON array string)
-    /// into a vec of TokenInfo.
     pub fn token_infos(&self) -> Vec<TokenInfo> {
         let token_ids: Vec<String> = self
             .clob_token_ids
@@ -66,7 +63,6 @@ impl GammaMarket {
     }
 }
 
-/// Unified resolution result that works for both market and event slugs.
 pub struct ResolvedSlug {
     pub title: String,
     pub markets: Vec<GammaMarket>,
@@ -82,8 +78,6 @@ impl GammaClient {
         Self { http, rate_limiter }
     }
 
-    /// Resolve a slug to markets. Tries the market endpoint first (since
-    /// Polymarket URLs use market slugs), then falls back to the event endpoint.
     pub async fn resolve_slug(&self, slug: &str) -> Result<ResolvedSlug> {
         if let Some(resolved) = self.try_market_slug(slug).await? {
             return Ok(resolved);

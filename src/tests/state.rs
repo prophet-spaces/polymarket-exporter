@@ -209,7 +209,6 @@ async fn registry_activate_prefers_clob_tokens() {
             question: Some("Will X?".to_string()),
             condition_id: "0xcond".to_string(),
             slug: Some("test-slug".to_string()),
-            // Gamma has outcomes in wrong order
             outcomes: Some(r#"["No","Yes"]"#.to_string()),
             clob_token_ids: Some(r#"["tok_a","tok_b"]"#.to_string()),
             active: Some(true),
@@ -219,7 +218,6 @@ async fn registry_activate_prefers_clob_tokens() {
         }],
     };
 
-    // CLOB provides the correct mapping
     let clob_tokens = HashMap::from([(
         "0xcond".to_string(),
         vec![
@@ -233,7 +231,6 @@ async fn registry_activate_prefers_clob_tokens() {
     let slugs = reg.slugs.read().await;
     let ss = slugs.get("test-slug").unwrap();
     let tokens = &ss.markets[0].tokens;
-    // Should use CLOB mapping (Yes, No) not Gamma mapping (No, Yes)
     assert_eq!(tokens[0].outcome, "Yes");
     assert_eq!(tokens[0].token_id, "tok_a");
     assert_eq!(tokens[1].outcome, "No");
@@ -259,7 +256,6 @@ async fn registry_activate_falls_back_to_gamma_tokens() {
         }],
     };
 
-    // Empty CLOB tokens — should fall back to Gamma
     reg.activate("test-slug", &resolved, &HashMap::new(), HashMap::new()).await;
 
     let slugs = reg.slugs.read().await;

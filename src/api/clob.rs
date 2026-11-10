@@ -51,7 +51,6 @@ struct LastTradePriceResponse {
 impl LastTradePriceResponse {
     fn into_price(self) -> Result<Option<f64>> {
         match self.side.as_str() {
-            // The Polymarket API returns a placeholder price of 0.5 when there are no trades.
             "" => return Ok(None),
             "BUY" | "SELL" => {}
             _ => anyhow::bail!("invalid last trade side: {}", self.side),

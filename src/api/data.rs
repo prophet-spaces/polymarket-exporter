@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
@@ -21,7 +22,6 @@ pub struct MetaHolder {
     pub holders: Option<Vec<Holder>>,
 }
 
-/// An open position returned by the Data API for a wallet.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Position {
     #[serde(rename = "token_id")]
@@ -42,6 +42,11 @@ pub struct Position {
     pub redeemable: bool,
     pub title: String,
     pub outcome: String,
+    pub event_id: String,
+    pub event_slug: String,
+    pub status: String,
+    pub first_entry_at: i64,
+    pub last_event_at: i64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -110,7 +115,6 @@ impl DataClient {
         }
     }
 
-    /// Fetch open interest for one or more condition IDs.
     pub async fn get_open_interest(&self, condition_ids: &[&str]) -> Result<Vec<OpenInterest>> {
         let mut result = Vec::new();
         for batch in condition_ids.chunks(20) {
@@ -138,7 +142,6 @@ impl DataClient {
         Ok(result)
     }
 
-    /// Fetch top holders for one or more condition IDs (max 20 per token).
     pub async fn get_top_holders(&self, condition_ids: &[&str]) -> Result<Vec<MetaHolder>> {
         let mut result = Vec::new();
         for batch in condition_ids.chunks(20) {
@@ -159,7 +162,6 @@ impl DataClient {
                 anyhow::bail!("Data API /v2/holders returned {}: {}", status, body);
             }
 
-            // Only the first page is needed for the top 20 holders per token.
             let response: DataResponse<Vec<MetaHolder>> = resp
                 .json()
                 .await
@@ -169,11 +171,48 @@ impl DataClient {
         Ok(result)
     }
 
-    /// Fetch the currently open positions for a wallet.
     pub async fn get_positions(&self, wallet: &str) -> Result<Vec<Position>> {
+        let mut positions = self.get_positions_by_status(wallet, "OPEN").await?;
+        let open_tokens: HashSet<_> = positions
+            .iter()
+            .map(|position| position.asset.clone())
+            .collect();
+        positions.extend(self.get_positions_by_status(wallet, "CLOSED").await?);
+        let verified_open_tokens = self
+            .get_positions_by_status(wallet, "OPEN")
+            .await?
+            .into_iter()
+            .map(|position| position.asset)
+            .collect::<HashSet<_>>();
+        anyhow::ensure!(
+            open_tokens == verified_open_tokens,
+            "open positions changed while reading wallet history; retry the scrape"
+        );
+        let mut tokens = HashSet::new();
+        for position in &positions {
+            anyhow::ensure!(
+                tokens.insert(&position.asset),
+                "position {} appeared twice while reading the open and closed books; retry the scrape",
+                position.asset
+            );
+            anyhow::ensure!(
+                !position.event_id.is_empty() && !position.event_slug.is_empty(),
+                "position {} has no parent event metadata",
+                position.asset
+            );
+            anyhow::ensure!(
+                position.realized_pnl.is_finite() && position.cash_pnl.is_finite(),
+                "position {} has invalid P&L",
+                position.asset
+            );
+        }
+        Ok(positions)
+    }
+
+    async fn get_positions_by_status(&self, wallet: &str, status: &str) -> Result<Vec<Position>> {
         let mut positions = Vec::new();
         let mut cursor = None;
-        let mut seen_cursors = std::collections::HashSet::new();
+        let mut seen_cursors = HashSet::new();
         loop {
             self.rate_limiter.acquire("data_api", "positions").await;
             self.rate_limiter.acquire("data_api", "general").await;
@@ -182,11 +221,14 @@ impl DataClient {
                 .get(format!("{}/v2/positions", self.base_url))
                 .query(&[
                     ("user", wallet),
-                    ("status", "OPEN"),
+                    ("status", status),
                     ("filter_type", "TOKENS"),
                     ("filter_amount", "0"),
                     ("limit", "1000"),
                 ]);
+            if status == "OPEN" {
+                request = request.query(&[("include_archived", "true")]);
+            }
             if let Some(cursor) = &cursor {
                 request = request.query(&[("cursor", cursor)]);
             }
@@ -221,7 +263,6 @@ impl DataClient {
         }
     }
 
-    /// Fetch the all-time realized P&L reported for a wallet.
     pub async fn get_all_time_realized_pnl(&self, wallet: &str) -> Result<Option<f64>> {
         self.rate_limiter.acquire("data_api", "general").await;
 
