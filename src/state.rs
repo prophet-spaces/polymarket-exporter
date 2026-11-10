@@ -7,7 +7,6 @@ use crate::api::data::{Holder, MetaHolder, OpenInterest};
 use crate::api::gamma::{ResolvedSlug, TokenInfo};
 use crate::config::CacheConfig;
 
-/// Per-token real-time data, updated by WebSocket events.
 #[derive(Debug, Clone, Default)]
 pub struct TokenState {
     pub best_bid: Option<f64>,
@@ -19,7 +18,6 @@ pub struct TokenState {
     pub fee_rate_bps: Option<i64>,
 }
 
-/// Resolved market metadata (immutable after activation).
 #[derive(Debug, Clone)]
 pub struct MarketMeta {
     pub question: String,
@@ -27,7 +25,6 @@ pub struct MarketMeta {
     pub tokens: Vec<TokenInfo>,
 }
 
-/// Cached REST data with TTL.
 #[derive(Debug, Clone)]
 struct CachedData<T> {
     data: T,
@@ -40,7 +37,6 @@ impl<T> CachedData<T> {
     }
 }
 
-/// All state for a single slug.
 #[derive(Debug)]
 pub struct SlugState {
     #[allow(dead_code)]
@@ -48,11 +44,8 @@ pub struct SlugState {
     #[allow(dead_code)]
     pub event_title: String,
     pub markets: Vec<MarketMeta>,
-    /// token_id -> TokenState
     pub tokens: HashMap<String, TokenState>,
-    /// condition_id -> OpenInterest value
     open_interest: Option<CachedData<HashMap<String, f64>>>,
-    /// token_id -> Vec<Holder>
     top_holders: Option<CachedData<HashMap<String, Vec<Holder>>>>,
 }
 
@@ -126,10 +119,8 @@ impl SlugState {
     }
 }
 
-/// Global registry of all active slugs.
 pub struct SlugRegistry {
     pub slugs: RwLock<HashMap<String, SlugState>>,
-    /// Reverse lookup: token_id -> slug (for WebSocket event dispatch)
     pub token_to_slug: RwLock<HashMap<String, String>>,
     pub cache_config: CacheConfig,
 }
@@ -147,9 +138,6 @@ impl SlugRegistry {
         self.slugs.read().await.contains_key(slug)
     }
 
-    /// Register a newly resolved slug. Returns the list of all token IDs to subscribe.
-    /// `clob_tokens` maps condition_id -> Vec<TokenInfo> from the CLOB `/markets` endpoint,
-    /// which provides authoritative token-outcome mappings. Falls back to Gamma if unavailable.
     pub async fn activate(
         &self,
         slug: &str,
@@ -207,7 +195,6 @@ impl SlugRegistry {
         all_token_ids
     }
 
-    /// Get all condition IDs for a slug.
     pub async fn condition_ids_for_slug(&self, slug: &str) -> Vec<String> {
         let slugs = self.slugs.read().await;
         slugs
@@ -216,7 +203,6 @@ impl SlugRegistry {
             .unwrap_or_default()
     }
 
-    /// Get all token IDs currently registered across all slugs.
     pub async fn all_token_ids(&self) -> Vec<String> {
         let t2s = self.token_to_slug.read().await;
         t2s.keys().cloned().collect()

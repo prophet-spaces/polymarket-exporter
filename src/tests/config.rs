@@ -81,7 +81,6 @@ holders_ttl_secs = 120
     let cfg = Config::load(tmpfile.path()).unwrap();
     assert_eq!(cfg.server.listen_addr, "127.0.0.1:3000");
     assert_eq!(cfg.cache.holders_ttl_secs, 120);
-    // Unspecified fields use defaults
     assert_eq!(cfg.cache.open_interest_ttl_secs, 30);
 }
 

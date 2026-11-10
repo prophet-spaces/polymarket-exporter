@@ -96,8 +96,6 @@ fn unknown_event_type_is_noop() {
 
 #[test]
 fn book_event_picks_best_from_multiple_levels() {
-    // Bids sorted ascending (worst first) and asks sorted descending (worst first),
-    // mimicking Polymarket's actual orderbook ordering.
     let event = make_event(r#"{
         "event_type": "book",
         "asset_id": "tok1",

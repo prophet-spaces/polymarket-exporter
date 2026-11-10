@@ -69,7 +69,6 @@ The example scrapes one wallet every five minutes. Replace the zero address in
       - targets:
           - 0xyour-wallet-address
 ```
-
 ## Telegram Alerts Setup
 
 1. Create a bot via [@BotFather](https://t.me/BotFather) on Telegram — save the bot token.

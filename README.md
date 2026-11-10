@@ -11,6 +11,7 @@ Prometheus  ──scrape──>  polymarket-exporter  ──REST+WS──>  Poly
 
 - Real-time bid/ask/price updates via WebSocket streaming
 - REST polling for open interest, top 20 holders, and wallet positions
+- Event P&L over a selected Grafana time range, including closed and redeemable positions
 - Built-in rate limiting per Polymarket API endpoint
 - Prometheus [multi-target exporter pattern](https://prometheus.io/docs/guides/multi-target-exporter/) — monitor any market by slug ([How to extract the slug](https://docs.polymarket.com/market-data/fetching-markets#how-to-extract-the-slug))
 - Exporter health metrics (active slugs, WebSocket connection status)
@@ -79,7 +80,7 @@ cp config.toml.example config.toml
 | Endpoint                                    | Description                                                   |
 |---------------------------------------------|---------------------------------------------------------------|
 | `GET /probe?target=<slug>`                  | Returns Prometheus metrics for a market slug (default module) |
-| `GET /probe?module=wallet&target=<address>` | Returns metrics for a wallet's open positions                 |
+| `GET /probe?module=wallet&target=<address>` | Returns open-position metrics and full-lifecycle event P&L    |
 | `GET /metrics`                              | Returns exporter health metrics                               |
 
 ## Metrics
@@ -100,20 +101,25 @@ cp config.toml.example config.toml
 
 ### Wallet metrics (`/probe?module=wallet`)
 
-| Metric                                             | Type  | Labels                                            | Description                                                         |
-|----------------------------------------------------|-------|---------------------------------------------------|---------------------------------------------------------------------|
-| `polymarket_wallet_position_shares`                | gauge | wallet, condition_id, token_id, question, outcome | Open position shares                                                |
-| `polymarket_wallet_position_average_price`         | gauge | wallet, condition_id, token_id, question, outcome | Average price paid per share in USDC                                |
-| `polymarket_wallet_position_current_price`         | gauge | wallet, condition_id, token_id, question, outcome | Current price per share in USDC                                     |
-| `polymarket_wallet_position_traded_usdc`           | gauge | wallet, condition_id, token_id, question, outcome | USDC paid for the current open position                             |
-| `polymarket_wallet_position_payout_if_win_usdc`    | gauge | wallet, condition_id, token_id, question, outcome | USDC paid if the current shares win                                 |
-| `polymarket_wallet_position_current_value_usdc`    | gauge | wallet, condition_id, token_id, question, outcome | Current position value in USDC                                      |
-| `polymarket_wallet_position_unrealized_gain_usdc`  | gauge | wallet, condition_id, token_id, question, outcome | Current value minus traded amount                                   |
-| `polymarket_wallet_position_unrealized_gain_ratio` | gauge | wallet, condition_id, token_id, question, outcome | Unrealized gain relative to traded amount                           |
-| `polymarket_wallet_position_cash_pnl_usdc`         | gauge | wallet, condition_id, token_id, question, outcome | Cash profit or loss in USDC reported by Polymarket                  |
-| `polymarket_wallet_position_pnl_ratio`             | gauge | wallet, condition_id, token_id, question, outcome | Profit or loss relative to initial value (0.10 = 10%)               |
-| `polymarket_wallet_position_realized_pnl_usdc`     | gauge | wallet, condition_id, token_id, question, outcome | Realized profit or loss in USDC                                     |
-| `polymarket_wallet_all_time_realized_pnl_usdc`     | gauge | wallet                                            | All-time realized profit or loss, including closed position history |
+| Metric                                                    | Type  | Labels                                            | Description                                                                                          |
+|-----------------------------------------------------------|-------|---------------------------------------------------|------------------------------------------------------------------------------------------------------|
+| `polymarket_wallet_position_shares`                       | gauge | wallet, condition_id, token_id, question, outcome | Open position shares                                                                                 |
+| `polymarket_wallet_position_average_price`                | gauge | wallet, condition_id, token_id, question, outcome | Average price paid per share in USDC                                                                 |
+| `polymarket_wallet_position_current_price`                | gauge | wallet, condition_id, token_id, question, outcome | Current price per share in USDC                                                                      |
+| `polymarket_wallet_position_traded_usdc`                  | gauge | wallet, condition_id, token_id, question, outcome | USDC paid for the current open position                                                              |
+| `polymarket_wallet_position_payout_if_win_usdc`           | gauge | wallet, condition_id, token_id, question, outcome | USDC paid if the current shares win                                                                  |
+| `polymarket_wallet_position_current_value_usdc`           | gauge | wallet, condition_id, token_id, question, outcome | Current position value in USDC                                                                       |
+| `polymarket_wallet_position_unrealized_gain_usdc`         | gauge | wallet, condition_id, token_id, question, outcome | Current value minus traded amount                                                                    |
+| `polymarket_wallet_position_unrealized_gain_ratio`        | gauge | wallet, condition_id, token_id, question, outcome | Unrealized gain relative to traded amount                                                            |
+| `polymarket_wallet_position_cash_pnl_usdc`                | gauge | wallet, condition_id, token_id, question, outcome | Cash profit or loss in USDC reported by Polymarket                                                   |
+| `polymarket_wallet_position_pnl_ratio`                    | gauge | wallet, condition_id, token_id, question, outcome | Profit or loss relative to initial value (0.10 = 10%)                                                |
+| `polymarket_wallet_position_realized_pnl_usdc`            | gauge | wallet, condition_id, token_id, question, outcome | Realized profit or loss in USDC                                                                      |
+| `polymarket_wallet_all_time_realized_pnl_usdc`            | gauge | wallet                                            | All-time realized profit or loss, including closed position history                                  |
+| `polymarket_wallet_pnl_snapshot_complete`                 | gauge | wallet                                            | 1 after the complete open and closed books have been read successfully, including an empty wallet    |
+| `polymarket_wallet_event_pnl_usdc`                        | gauge | wallet, event_id, event_slug, component           | Cumulative event P&L; component is `realized`, `unrealized`, or `total`                              |
+| `polymarket_wallet_event_first_entry_timestamp_seconds`   | gauge | wallet, event_id, event_slug                      | Earliest acquisition in the event; 0 when unknown                                                    |
+| `polymarket_wallet_event_status`                          | gauge | wallet, event_id, event_slug                      | 0 = closed, 1 = redeemable, 2 = open; the most active remaining position determines the event status |
+| `polymarket_wallet_event_last_activity_timestamp_seconds` | gauge | wallet, event_id, event_slug                      | Latest trade or position activity in the event; 0 when unknown                                       |
 
 ### Exporter health metrics (`/metrics`)
 

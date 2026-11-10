@@ -25,3 +25,6 @@ jobs:
           -v "$PWD:/work:ro" -w /work
           prom/prometheus:v3.10.0
           test rules example/prometheus/test/*.yml
+
+      - name: Test Grafana wallet P&L queries
+        run: node example/grafana/test-wallet-pnl.mjs

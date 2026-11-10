@@ -5,8 +5,6 @@ use crate::config::CacheConfig;
 use crate::state::{MarketMeta, SlugRegistry, SlugState, TokenState};
 use std::collections::HashMap;
 
-// --- escape_label tests ---
-
 #[test]
 fn escape_label_clean_string() {
     assert_eq!(escape_label("hello world"), "hello world");
@@ -62,6 +60,11 @@ fn render_wallet_metrics_has_position_values() {
         redeemable: false,
         title: "Will it happen?".to_string(),
         outcome: "Yes".to_string(),
+        event_id: "123".to_string(),
+        event_slug: "will-it-happen".to_string(),
+        status: "OPEN".to_string(),
+        first_entry_at: 100,
+        last_event_at: 200,
     }];
     let out = render_wallet_metrics(
         "0x0123456789abcdef0123456789abcdef01234567",
@@ -108,6 +111,11 @@ fn render_wallet_metrics_excludes_redeemable_positions() {
         redeemable: true,
         title: "Settled market".to_string(),
         outcome: "No".to_string(),
+        event_id: "123".to_string(),
+        event_slug: "settled-event".to_string(),
+        status: "REDEEMABLE".to_string(),
+        first_entry_at: 100,
+        last_event_at: 200,
     }];
 
     let out = render_wallet_metrics(
@@ -116,12 +124,91 @@ fn render_wallet_metrics_excludes_redeemable_positions() {
         Some(12.5),
     );
 
+    assert!(!out
+        .lines()
+        .any(|line| line.starts_with("polymarket_wallet_position_")
+            && line.contains("settled-token")));
     assert!(!out.contains("settled-token"));
-    assert!(!out.contains("Settled market"));
+    assert!(out.contains("polymarket_wallet_event_status{wallet=\"0x0123456789abcdef0123456789abcdef01234567\",event_id=\"123\",event_slug=\"settled-event\"} 1\n"));
     assert!(out.contains("polymarket_wallet_all_time_realized_pnl_usdc"));
 }
 
-// --- render_market_metrics tests ---
+#[test]
+fn event_pnl_combines_markets_and_keeps_closed_and_redeemable_positions() {
+    let position = Position {
+        asset: "yes".into(),
+        condition_id: "market-a".into(),
+        size: 10.0,
+        avg_price: 0.5,
+        initial_value: 5.0,
+        current_value: 7.0,
+        cash_pnl: 2.0,
+        percent_pnl: 40.0,
+        realized_pnl: 3.0,
+        cur_price: 0.7,
+        redeemable: false,
+        title: "Question A".into(),
+        outcome: "Yes".into(),
+        event_id: "123".into(),
+        event_slug: "same-event".into(),
+        status: "OPEN".into(),
+        first_entry_at: 100,
+        last_event_at: 200,
+    };
+    let closed = Position {
+        asset: "closed".into(),
+        condition_id: "market-b".into(),
+        size: 0.0,
+        cash_pnl: 0.0,
+        realized_pnl: -4.0,
+        status: "CLOSED".into(),
+        first_entry_at: 50,
+        last_event_at: 300,
+        ..position.clone()
+    };
+    let redeemable = Position {
+        asset: "redeemable".into(),
+        size: 5.0,
+        cash_pnl: 1.0,
+        realized_pnl: 0.0,
+        status: "REDEEMABLE".into(),
+        redeemable: true,
+        ..position.clone()
+    };
+    let out = render_wallet_metrics("wallet", &[position, closed.clone(), redeemable], None);
+    let labels = "wallet=\"wallet\",event_id=\"123\",event_slug=\"same-event\"";
+    for (component, value) in [("realized", -1), ("unrealized", 3), ("total", 2)] {
+        assert!(out.contains(&format!(
+            "polymarket_wallet_event_pnl_usdc{{{labels},component=\"{component}\"}} {value}\n"
+        )));
+    }
+    assert!(out.contains(&format!(
+        "polymarket_wallet_event_first_entry_timestamp_seconds{{{labels}}} 50\n"
+    )));
+    assert!(out.contains(&format!("polymarket_wallet_event_status{{{labels}}} 2\n")));
+    assert!(out.contains(&format!(
+        "polymarket_wallet_event_last_activity_timestamp_seconds{{{labels}}} 300\n"
+    )));
+    assert!(!out
+        .lines()
+        .any(|line| line.starts_with("polymarket_wallet_position_")
+            && (line.contains("token_id=\"closed\"") || line.contains("token_id=\"redeemable\""))));
+
+    let out = render_wallet_metrics("wallet", &[closed], None);
+    assert!(out.contains(&format!("polymarket_wallet_event_status{{{labels}}} 0\n")));
+    assert!(out.contains(&format!(
+        "polymarket_wallet_event_pnl_usdc{{{labels},component=\"total\"}} -4\n"
+    )));
+}
+
+#[test]
+fn empty_wallet_still_exports_complete_snapshot() {
+    let out = render_wallet_metrics("wallet", &[], None);
+    assert!(out.contains("polymarket_wallet_pnl_snapshot_complete{wallet=\"wallet\"} 1\n"));
+    assert!(!out
+        .lines()
+        .any(|line| line.starts_with("polymarket_wallet_event_pnl_usdc{")));
+}
 
 fn make_registry_with_state(slug: &str, state: SlugState) -> SlugRegistry {
     let mut slugs = HashMap::new();

@@ -45,8 +45,6 @@ impl RateLimiterService {
         Arc::new(RateLimiter::direct(quota))
     }
 
-    /// Wait until the rate limit allows a request for the given api and endpoint.
-    /// Key format: "gamma.events", "clob.book", "data_api.holders", etc.
     pub async fn acquire(&self, api: &str, endpoint: &str) {
         let key = format!("{}.{}", api, endpoint);
         if let Some(limiter) = self.limiters.get(&key) {

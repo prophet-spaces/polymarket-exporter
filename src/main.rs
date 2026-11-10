@@ -29,12 +29,10 @@ use crate::state::SlugRegistry;
 #[derive(Parser)]
 #[command(name = "polymarket-exporter", about = "Prometheus exporter for Polymarket")]
 struct Cli {
-    /// Path to config file
-    #[arg(short, long, default_value = "config.toml", env = "CONFIG_PATH")]
+    #[arg(short, long, default_value = "config.toml", env = "CONFIG_PATH", help = "Path to config file")]
     config: PathBuf,
 
-    /// Override listen address
-    #[arg(short, long, env = "LISTEN_ADDR")]
+    #[arg(short, long, env = "LISTEN_ADDR", help = "Override listen address")]
     listen: Option<String>,
 }
 

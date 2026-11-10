@@ -117,7 +117,12 @@ const POSITION_JSON: &str = r#"{
         "current_price": 0.65,
         "redeemable": false,
         "title": "Will it happen?",
-        "outcome": "Yes"
+        "outcome": "Yes",
+        "event_id": "123",
+        "event_slug": "will-it-happen",
+        "status": "OPEN",
+        "first_entry_at": 100,
+        "last_event_at": 200
     }"#;
 
 #[test]
@@ -134,6 +139,8 @@ fn serde_position() {
     assert_eq!(position.cur_price, 0.65);
     assert_eq!(position.realized_pnl, 0.25);
     assert!(!position.redeemable);
+    assert_eq!(position.event_id, "123");
+    assert_eq!(position.first_entry_at, 100);
 }
 
 #[test]
@@ -183,14 +190,24 @@ async fn positions_follow_cursors_through_empty_pages_and_fail_on_bad_pages() {
 
     let app = Router::new().route("/v2/positions", get(
         |Query(params): Query<HashMap<String, String>>| async move {
-            assert_eq!(params["status"], "OPEN");
+            let status = params["status"].as_str();
+            if status == "OPEN" {
+                assert_eq!(params["include_archived"], "true");
+            } else {
+                assert_eq!(status, "CLOSED");
+                assert!(!params.contains_key("include_archived"));
+                return (StatusCode::OK, Json(json!({"data": [], "pagination": {"has_more": false, "next_cursor": null}})));
+            }
             assert_eq!(params["filter_type"], "TOKENS");
             assert_eq!(params["filter_amount"], "0");
             assert_eq!(params["limit"], "1000");
             assert!(!params.contains_key("offset"));
             assert!(!params.contains_key("sizeThreshold"));
             let cursor = params.get("cursor").map(String::as_str);
-            let position: serde_json::Value = serde_json::from_str(POSITION_JSON).unwrap();
+            let mut position: serde_json::Value = serde_json::from_str(POSITION_JSON).unwrap();
+            if cursor == Some("last") {
+                position["token_id"] = json!("token-2");
+            }
             let body = match (params["user"].as_str(), cursor) {
                 ("empty", _) => json!({"data": [], "pagination": {"has_more": false, "next_cursor": null}}),
                 (_, None) => json!({"data": [position], "pagination": {"has_more": true, "next_cursor": "next/+="}}),
@@ -225,6 +242,85 @@ async fn positions_follow_cursors_through_empty_pages_and_fail_on_bad_pages() {
         assert!(error.to_string().contains(message), "{wallet}: {error}");
     }
     server.abort();
+}
+
+#[tokio::test]
+async fn positions_keep_closed_history_and_reject_partial_or_ambiguous_books() {
+    use axum::{extract::Query, http::StatusCode, routing::get, Json, Router};
+    use serde_json::json;
+    use std::collections::HashMap;
+
+    let app = Router::new().route("/v2/positions", get(
+        |Query(params): Query<HashMap<String, String>>| async move {
+            let mut position: serde_json::Value = serde_json::from_str(POSITION_JSON).unwrap();
+            let wallet = params["user"].as_str();
+            if params["status"] == "CLOSED" {
+                if wallet == "closed-error" {
+                    return (StatusCode::BAD_GATEWAY, Json(json!({"error": "unavailable"})));
+                }
+                position["status"] = json!("CLOSED");
+                position["current_size"] = json!(0.0);
+                position["current_value"] = json!(0.0);
+                position["unrealized_pnl"] = json!(0.0);
+                position["realized_pnl"] = json!(-50.0);
+                if wallet != "duplicate" {
+                    position["token_id"] = json!("closed-token");
+                }
+            }
+            if wallet == "missing-event" { position["event_id"] = json!(""); }
+            if wallet == "missing-field" { position.as_object_mut().unwrap().remove("first_entry_at"); }
+            (StatusCode::OK, Json(json!({"data": [position], "pagination": {"has_more": false, "next_cursor": null}})))
+        }
+    ));
+    let (client, server) = mock_client(app).await;
+    let positions = client.get_positions("wallet").await.unwrap();
+    assert_eq!(positions.len(), 2);
+    assert_eq!(positions[1].status, "CLOSED");
+    assert_eq!(positions[1].realized_pnl, -50.0);
+    for (wallet, message) in [
+        ("closed-error", "Data API /v2/positions returned 502"),
+        ("duplicate", "appeared twice"),
+        ("missing-event", "no parent event metadata"),
+        ("missing-field", "failed to deserialize wallet positions"),
+    ] {
+        let error = client.get_positions(wallet).await.unwrap_err();
+        assert!(error.to_string().contains(message), "{wallet}: {error}");
+    }
+    server.abort();
+}
+
+#[tokio::test]
+async fn positions_reject_reopening_or_closing_during_history_read() {
+    use axum::{extract::Query, routing::get, Json, Router};
+    use serde_json::json;
+    use std::collections::HashMap;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    for initially_open in [false, true] {
+        let reads = Arc::new(AtomicUsize::new(0));
+        let app = Router::new().route("/v2/positions", get(
+            move |Query(params): Query<HashMap<String, String>>| {
+                let reads = reads.clone();
+                async move {
+                    let mut positions = Vec::new();
+                    if params["status"] == "OPEN" {
+                        let first_read = reads.fetch_add(1, Ordering::SeqCst) == 0;
+                        if first_read == initially_open {
+                            positions.push(serde_json::from_str::<serde_json::Value>(POSITION_JSON).unwrap());
+                        }
+                    }
+                    Json(json!({"data": positions, "pagination": {"has_more": false, "next_cursor": null}}))
+                }
+            }
+        ));
+        let (client, server) = mock_client(app).await;
+        let error = client.get_positions("wallet").await.unwrap_err();
+        assert!(
+            error.to_string().contains("open positions changed"),
+            "{error}"
+        );
+        server.abort();
+    }
 }
 
 #[tokio::test]
